@@ -311,19 +311,6 @@ tfoot tr td{padding:11px 14px;font-weight:600;font-size:12px;background:var(--s2
       <div class="flabel">Início dos Pagamentos</div>
       <input type="date" id="dataInicio" oninput="calc()">
     </div>
-
-    <div class="field">
-      <div class="flabel">Status</div>
-      <div class="tog" style="margin:10px 0 12px;">
-        <button class="togbtn on" id="status-aberto" onclick="setStatus('aberto')">Aberto</button>
-        <button class="togbtn"    id="status-pago"   onclick="setStatus('pago')">Pago</button>
-      </div>
-    </div>
-
-    <div class="field" id="data-pagamento-field" style="display:none;">
-      <div class="flabel">Data de Pagamento</div>
-      <input type="date" id="dataPagamento">
-    </div>
   </div>
 
   <!-- JUROS -->
@@ -495,7 +482,7 @@ function getBase(){
 }
 
 /* ═══ STATE */
-const S={tipo:'imovel',sistema:'PRICE',taxaMode:'m',view:'ano',tab:[],status:'aberto',dataPagamento:null};
+const S={tipo:'imovel',sistema:'PRICE',taxaMode:'m',view:'ano',tab:[],parcelas:{}};
 
 /* ═══ ENGINES */
 function engPRICE(pv,i,n){
@@ -541,11 +528,14 @@ function setView(v){
   ['ano','completo','datas'].forEach(x=>G('tv-'+x).classList.toggle('on',x===v));
   renderTable();
 }
-function setStatus(s){
-  S.status=s;
-  G('status-aberto').classList.toggle('on',s==='aberto');
-  G('status-pago').classList.toggle('on',s==='pago');
-  G('data-pagamento-field').style.display=s==='pago'?'':'none';
+function toggleParcelaStatus(numParcela){
+  if(!S.parcelas[numParcela]) S.parcelas[numParcela]={status:'aberto',dataPagamento:''};
+  S.parcelas[numParcela].status=S.parcelas[numParcela].status==='aberto'?'pago':'aberto';
+  renderTable();
+}
+function setParcelaDataPagamento(numParcela,data){
+  if(!S.parcelas[numParcela]) S.parcelas[numParcela]={status:'aberto',dataPagamento:''};
+  S.parcelas[numParcela].dataPagamento=data;
   renderTable();
 }
 function onMChange(){
@@ -769,8 +759,7 @@ function renderTable(){
 
   /* ─ POR VENCIMENTO */
   if(S.view==='datas'){
-    G('tab-info').textContent=tab.length+' vencimentos · '+(c?'Consórcio':S.sistema)+' · Status: '+S.status;
-    const dataPgto=G('dataPagamento').value;
+    G('tab-info').textContent=tab.length+' vencimentos · '+(c?'Consórcio':S.sistema);
     G('th').innerHTML=`<tr>
       <th style="text-align:left">Data de Vencimento</th>
       <th>#</th>
@@ -778,8 +767,8 @@ function renderTable(){
       <th>Amortização</th>
       <th>${jl}</th>
       <th>Saldo Devedor</th>
-      <th>Status</th>
-      ${S.status==='pago'?'<th>Data de Pagamento</th>':''}
+      <th style="text-align:center">Status</th>
+      <th style="text-align:center">Data de Pagamento</th>
     </tr>`;
     const today=new Date(); today.setHours(0,0,0,0);
     let h='';
@@ -787,15 +776,14 @@ function renderTable(){
       const d=new Date(base); d.setMonth(d.getMonth()+r.p-1);
       const past=d<today&&!isCurM(base,r.p-1);
       const cur=isCurM(base,r.p-1);
-      let statusBadge='';
-      let dataPgtoCell='';
 
-      if(S.status==='pago'){
-        statusBadge='<span class="bdg bgr">PAGO</span>';
-        dataPgtoCell=`<td>${dataPgto?new Date(dataPgto).toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'}):'—'}</td>`;
-      } else {
-        statusBadge=past?'<span class="bdg bgr">VENCIDO</span>':cur?'<span class="bdg bam">ATUAL</span>':'<span style="color:var(--tx3);font-size:10px">Aberto</span>';
-      }
+      const parcela=S.parcelas[r.p]||{status:'aberto',dataPagamento:''};
+      const statusDisplay=parcela.status==='pago'?'<span class="bdg bgr">PAGO</span>':'<span style="color:var(--tx3);font-size:10px">Aberto</span>';
+      const statusBtn=`<button onclick="toggleParcelaStatus(${r.p})" style="background:none;border:1px solid var(--bd);border-radius:4px;padding:4px 8px;cursor:pointer;color:var(--tx2);font-size:10px;font-family:var(--mono);transition:all .15s;font-weight:500" title="Clique para alternar status">${statusDisplay}</button>`;
+
+      const dataPgtoInput=parcela.status==='pago'
+        ?`<input type="date" value="${parcela.dataPagamento}" onchange="setParcelaDataPagamento(${r.p},this.value)" style="width:100%;padding:4px 6px;border:1px solid var(--bd);border-radius:4px;background:var(--s2);color:var(--tx);font-family:var(--mono);font-size:11px">`
+        :'<span style="color:var(--tx3);font-size:10px">—</span>';
 
       h+=`<tr class="${cur?'hl':past?'past':i%2===1?'stripe':''}">
         <td>
@@ -809,8 +797,8 @@ function renderTable(){
         <td class="cam">${fmt(r.am)}</td>
         <td class="cju">${fmt(r.ju)}</td>
         <td class="${r.sd<1?'csd z':'csd'}">${fmt(r.sd)}</td>
-        <td>${statusBadge}</td>
-        ${dataPgtoCell}
+        <td style="text-align:center">${statusBtn}</td>
+        <td style="text-align:center">${dataPgtoInput}</td>
       </tr>`;
     });
     G('tb').innerHTML=h;
@@ -823,8 +811,18 @@ function renderTable(){
   G('hdate').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
   const d=new Date(); d.setMonth(d.getMonth()+1);
   G('dataInicio').value=d.toISOString().split('T')[0];
+
+  // Carregar dados salvos do localStorage
+  const saved=localStorage.getItem('fincalc-parcelas');
+  if(saved) try { S.parcelas=JSON.parse(saved); } catch(e) {}
+
   onMChange();
   calc();
+
+  // Salvar dados sempre que mudar
+  window.addEventListener('beforeunload',()=>{
+    localStorage.setItem('fincalc-parcelas',JSON.stringify(S.parcelas));
+  });
 })();
 </script>
 </body>
