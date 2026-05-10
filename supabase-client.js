@@ -1,32 +1,82 @@
 // ── Configuração do Supabase ──
-// Copie suas credenciais do Supabase dashboard
+// O cliente tenta ler variáveis locais, depois do servidor Vercel, e por fim pede manualmente.
 
-const SUPABASE_URL = import.meta.env?.VITE_SUPABASE_URL ||
-                     localStorage.getItem('SUPABASE_URL') ||
-                     prompt('Cole a URL do Supabase:');
+function getBrowserSupabaseConfig() {
+  return {
+    url: window.SUPABASE_URL || localStorage.getItem('SUPABASE_URL') || null,
+    anonKey: window.SUPABASE_ANON_KEY || localStorage.getItem('SUPABASE_ANON_KEY') || null
+  };
+}
 
-const SUPABASE_ANON_KEY = import.meta.env?.VITE_SUPABASE_ANON_KEY ||
-                          localStorage.getItem('SUPABASE_ANON_KEY') ||
-                          prompt('Cole a chave ANON do Supabase:');
+async function fetchServerSupabaseConfig() {
+  try {
+    const response = await fetch('/api/config');
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (data.supabaseUrl && data.supabaseAnonKey) {
+      return {
+        url: data.supabaseUrl,
+        anonKey: data.supabaseAnonKey
+      };
+    }
+  } catch (error) {
+    console.warn('Não foi possível carregar config Supabase do servidor:', error);
+  }
+  return null;
+}
 
-// Para desenvolvimento local, você pode salvar no localStorage:
-if (SUPABASE_URL) localStorage.setItem('SUPABASE_URL', SUPABASE_URL);
-if (SUPABASE_ANON_KEY) localStorage.setItem('SUPABASE_ANON_KEY', SUPABASE_ANON_KEY);
+function saveSupabaseConfig(url, anonKey) {
+  if (url) localStorage.setItem('SUPABASE_URL', url);
+  if (anonKey) localStorage.setItem('SUPABASE_ANON_KEY', anonKey);
+}
 
-// ── Cliente Supabase ──
 class SupabaseClient {
   constructor(url, key) {
-    this.url = url;
-    this.key = key;
-    this.headers = {
-      'Authorization': `Bearer ${key}`,
-      'apikey': key,
+    this.url = url || null;
+    this.key = key || null;
+  }
+
+  async ensureConfig() {
+    if (this.url && this.key) return;
+
+    const browserConfig = getBrowserSupabaseConfig();
+    if (browserConfig.url && browserConfig.anonKey) {
+      this.url = browserConfig.url;
+      this.key = browserConfig.anonKey;
+      return;
+    }
+
+    const serverConfig = await fetchServerSupabaseConfig();
+    if (serverConfig) {
+      this.url = serverConfig.url;
+      this.key = serverConfig.anonKey;
+      saveSupabaseConfig(this.url, this.key);
+      return;
+    }
+
+    const promptUrl = prompt('Cole a URL do Supabase:');
+    const promptKey = prompt('Cole a chave ANON do Supabase:');
+    if (!promptUrl || !promptKey) {
+      throw new Error('Supabase config não fornecida. Verifique as variáveis de ambiente ou configure localmente.');
+    }
+
+    this.url = promptUrl;
+    this.key = promptKey;
+    saveSupabaseConfig(this.url, this.key);
+  }
+
+  get headers() {
+    if (!this.key) throw new Error('Supabase ANON key não disponível.');
+    return {
+      'Authorization': `Bearer ${this.key}`,
+      apikey: this.key,
       'Content-Type': 'application/json',
-      'Prefer': 'return=representation'
+      Prefer: 'return=representation'
     };
   }
 
   async insert(table, data) {
+    await this.ensureConfig();
     const response = await fetch(`${this.url}/rest/v1/${table}`, {
       method: 'POST',
       headers: this.headers,
@@ -37,12 +87,14 @@ class SupabaseClient {
   }
 
   async select(table, filters = {}) {
+    await this.ensureConfig();
     let url = `${this.url}/rest/v1/${table}`;
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({ select: '*' });
 
     Object.entries(filters).forEach(([key, value]) => {
-      params.append('select', '*');
-      if (value) params.append(`${key}`, `eq.${value}`);
+      if (value !== undefined && value !== null && value !== '') {
+        params.append(key, `eq.${value}`);
+      }
     });
 
     if (params.toString()) url += `?${params.toString()}`;
@@ -56,6 +108,7 @@ class SupabaseClient {
   }
 
   async update(table, id, data) {
+    await this.ensureConfig();
     const response = await fetch(`${this.url}/rest/v1/${table}?id=eq.${id}`, {
       method: 'PATCH',
       headers: this.headers,
@@ -66,6 +119,7 @@ class SupabaseClient {
   }
 
   async delete(table, id) {
+    await this.ensureConfig();
     const response = await fetch(`${this.url}/rest/v1/${table}?id=eq.${id}`, {
       method: 'DELETE',
       headers: this.headers
@@ -77,4 +131,4 @@ class SupabaseClient {
 
 // Exportar para uso global
 window.SupabaseClient = SupabaseClient;
-window.db = new SupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+window.db = new SupabaseClient();

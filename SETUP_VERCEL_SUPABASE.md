@@ -141,9 +141,11 @@ git push -u origin main
 2. Clique em **Add New** > **Project**
 3. Selecione seu repositório `appfinia`
 4. Em **Environment Variables**, adicione:
-   - `VITE_SUPABASE_URL` = sua URL do Supabase
-   - `VITE_SUPABASE_ANON_KEY` = sua chave ANON
+   - `SUPABASE_URL` = sua URL do Supabase
+   - `SUPABASE_ANON_KEY` = sua chave ANON
 5. Clique em **Deploy**
+
+> Observação: este projeto é um site estático sem build, então o navegador não lê variáveis de ambiente diretamente. O endpoint `api/config.js` fornece as chaves do servidor Vercel ao frontend.
 
 ## 📱 Usar a Aplicação
 
