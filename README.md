@@ -48,6 +48,7 @@ AppFinIA/
 ├── vercel.json                         # Config Vercel
 ├── package.json                        # Dependências
 ├── .env.example                        # Exemplo env
+├── supabase/schema.sql                 # SQL de criação das tabelas
 ├── .gitignore                          # Git ignore
 ├── SETUP_VERCEL_SUPABASE.md           # Guia setup
 ├── ARQUITETURA.html                    # Diagrama

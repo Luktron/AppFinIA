@@ -147,6 +147,17 @@ git push -u origin main
 
 > Observação: este projeto é um site estático sem build, então o navegador não lê variáveis de ambiente diretamente. O endpoint `api/config.js` fornece as chaves do servidor Vercel ao frontend.
 
+## 4. Criar as tabelas no Supabase
+
+No editor SQL do Supabase, abra `supabase/schema.sql` e execute o script para criar as tabelas usadas pelo AppFinIA:
+
+- `receitas`
+- `fixas`
+- `gastos`
+- `investimentos`
+
+Se preferir, copie o conteúdo de `supabase/schema.sql` para o console SQL do seu projeto Supabase.
+
 ## 📱 Usar a Aplicação
 
 ### Com Supabase (Recomendado - Persistência na Nuvem)
