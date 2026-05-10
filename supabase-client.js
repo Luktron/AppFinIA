@@ -10,8 +10,13 @@ function getBrowserSupabaseConfig() {
 
 async function fetchServerSupabaseConfig() {
   try {
-    const response = await fetch('/api/config');
-    if (!response.ok) return null;
+    const response = await fetch('/api/config', {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!response.ok) {
+      console.warn(`API retornou status ${response.status}`);
+      return null;
+    }
     const data = await response.json();
     if (data.supabaseUrl && data.supabaseAnonKey) {
       return {
@@ -20,7 +25,7 @@ async function fetchServerSupabaseConfig() {
       };
     }
   } catch (error) {
-    console.warn('Não foi possível carregar config Supabase do servidor:', error);
+    console.warn('Não foi possível carregar config Supabase do servidor:', error.message);
   }
   return null;
 }

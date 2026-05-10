@@ -2,14 +2,29 @@
   "buildCommand": "echo 'Static site - no build needed'",
   "framework": "static",
   "public": ".",
-  "redirects": [
+  "rewrites": [
     {
-      "source": "/",
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ],
   "env": [
     "SUPABASE_URL",
     "SUPABASE_ANON_KEY"
+  ],
+  "headers": [
+    {
+      "source": "/:path*",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        }
+      ]
+    }
   ]
 }
