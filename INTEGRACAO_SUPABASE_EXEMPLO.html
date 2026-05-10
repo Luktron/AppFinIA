@@ -1,0 +1,68 @@
+<!-- Exemplo de integração de Supabase em FinIA.html -->
+<!-- Adicione o seguinte ao <head> do arquivo original: -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js"></script>
+<script src="supabase-client.js"></script>
+
+<!-- Opcionalmente, adicione ao final do <body> antes de fechar: -->
+
+<script>
+// ── Funções para Sincronizar com Supabase ──
+
+// 1. Salvar dados do SQLite local para Supabase
+async function sincronizarParaSupabase() {
+  try {
+    if (!window.db || !window.db.url) {
+      console.warn('Supabase não configurado. Usando localStorage.');
+      return;
+    }
+
+    // Exemplo: sincronizar receitas
+    const receitas = DB.exec("SELECT * FROM receitas");
+    if (receitas.length > 0) {
+      for (const row of receitas[0].values) {
+        await window.db.insert('receitas', {
+          descricao: row[1],
+          valor: row[2],
+          mes: row[3],
+          data: row[4],
+          categoria: row[5],
+          user_id: null // Adicionar user_id se tiver autenticação
+        });
+      }
+      console.log('Dados sincronizados com Supabase');
+    }
+  } catch (error) {
+    console.error('Erro ao sincronizar:', error);
+    alert('Erro ao sincronizar com Supabase: ' + error.message);
+  }
+}
+
+// 2. Carregar dados do Supabase para SQLite local
+async function carregarDoSupabase() {
+  try {
+    if (!window.db || !window.db.url) {
+      console.warn('Supabase não configurado.');
+      return;
+    }
+
+    const receitas = await window.db.select('receitas');
+    console.log('Receitas carregadas:', receitas);
+
+    // Você pode processar os dados aqui
+    return receitas;
+  } catch (error) {
+    console.error('Erro ao carregar do Supabase:', error);
+  }
+}
+
+// 3. Backup automático para Supabase a cada 5 minutos
+setInterval(async () => {
+  if (window.db && window.db.url) {
+    await sincronizarParaSupabase();
+    console.log('Backup automático realizado');
+  }
+}, 5 * 60 * 1000); // 5 minutos
+
+console.log('Módulo Supabase carregado');
+</script>

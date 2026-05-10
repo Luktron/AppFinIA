@@ -1,0 +1,25 @@
+{
+  "name": "appfinia",
+  "version": "1.0.0",
+  "description": "AppFinIA - Assistente Financeiro Inteligente",
+  "private": true,
+  "keywords": [
+    "financeiro",
+    "investimentos",
+    "calculadora",
+    "inteligência-artificial"
+  ],
+  "author": "Seu Nome",
+  "license": "MIT",
+  "engines": {
+    "node": "18.x || 20.x"
+  },
+  "scripts": {
+    "dev": "python -m http.server 3000 --directory .",
+    "build": "echo 'Static site - no build needed'",
+    "start": "python -m http.server 3000 --directory .",
+    "preview": "python -m http.server 3000 --directory ."
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

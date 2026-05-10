@@ -1,0 +1,1454 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="FinIA"/>
+<title>FinIA</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{background:#0a0f1e;color:#e2e8f0;font-family:'Segoe UI',system-ui,sans-serif;overscroll-behavior:none;}
+input,button,select,textarea{font-family:inherit;}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;}
+::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:#111827;}
+::-webkit-scrollbar-thumb{background:#1e2d45;border-radius:4px;}
+.fade-in{animation:fadeIn .25s ease;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+select{-webkit-appearance:none;appearance:none;}
+</style>
+</head>
+<body>
+<div id="root" style="display:flex;align-items:center;justify-content:center;min-height:100vh;">
+  <div style="text-align:center;color:#64748b;">
+    <div style="font-size:40px;margin-bottom:12px;filter:drop-shadow(0 0 20px #00d4ff)">💠</div>
+    <div style="color:#00d4ff;font-size:14px;">Iniciando banco de dados...</div>
+  </div>
+</div>
+
+<!-- sql.js SQLite via WebAssembly -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script>
+// ── Inicialização SQLite ──
+let DB = null;
+let rootReact = null;
+
+function salvarDB() {
+  try {
+    const data = DB.export();
+    const b64 = btoa(String.fromCharCode(...data));
+    localStorage.setItem('finia_db', b64);
+  } catch(e) { console.error('Erro ao salvar DB', e); }
+}
+
+function carregarDB() {
+  const b64 = localStorage.getItem('finia_db');
+  if (!b64) return null;
+  try {
+    const bin = atob(b64);
+    return new Uint8Array(bin.length).fill(0).map((_,i) => bin.charCodeAt(i));
+  } catch(e) { return null; }
+}
+
+function exportarDB() {
+  const data = DB.export();
+  const blob = new Blob([data], {type:'application/octet-stream'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'finia_backup.db'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importarDB(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const arr = new Uint8Array(e.target.result);
+      DB = new SQL.Database(arr);
+      criarTabelas();
+      salvarDB();
+      alert('Banco importado com sucesso!');
+      window.location.reload();
+    } catch(err) { alert('Erro ao importar: ' + err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function criarTabelas() {
+  DB.run(`
+    CREATE TABLE IF NOT EXISTS receitas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      descricao TEXT NOT NULL,
+      valor REAL NOT NULL,
+      mes TEXT NOT NULL,
+      data TEXT NOT NULL,
+      categoria TEXT DEFAULT 'Salário'
+    );
+    CREATE TABLE IF NOT EXISTS fixas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      descricao TEXT NOT NULL,
+      valor REAL NOT NULL,
+      categoria TEXT DEFAULT 'Outros',
+      ativo INTEGER DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS gastos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      descricao TEXT NOT NULL,
+      valor REAL NOT NULL,
+      data TEXT NOT NULL,
+      mes TEXT NOT NULL,
+      semana INTEGER NOT NULL,
+      categoria TEXT DEFAULT 'Outros'
+    );
+    CREATE INDEX IF NOT EXISTS idx_receitas_mes ON receitas(mes);
+    CREATE INDEX IF NOT EXISTS idx_gastos_mes ON gastos(mes);
+    CREATE INDEX IF NOT EXISTS idx_gastos_data ON gastos(data);
+  `);
+}
+
+// ── Helpers DB ──
+const dq = (sql, params=[]) => {
+  const stmt = DB.prepare(sql);
+  stmt.bind(params);
+  const rows = [];
+  while(stmt.step()) rows.push(stmt.getAsObject());
+  stmt.free();
+  return rows;
+};
+const dr = (sql, params=[]) => { DB.run(sql, params); salvarDB(); };
+
+// ── Iniciar ──
+initSqlJs({
+  locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/${f}`
+}).then(SQL => {
+  const saved = carregarDB();
+  DB = saved ? new SQL.Database(saved) : new SQL.Database();
+  criarTabelas();
+  salvarDB();
+  // montar React
+  rootReact = ReactDOM.createRoot(document.getElementById('root'));
+  rootReact.render(React.createElement(window.FinIAApp));
+}).catch(e => {
+  document.getElementById('root').innerHTML =
+    `<div style="color:#ff4d6d;padding:20px;text-align:center">Erro ao iniciar: ${e.message}<br><small>Verifique sua conexão com a internet</small></div>`;
+});
+</script>
+
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback,useMemo} = React;
+
+// ── Cores ──
+const C = {
+  bg:"#0a0f1e", card:"#111827", border:"#1e2d45",
+  accent:"#00d4ff", green:"#00ff9d", yellow:"#ffd166",
+  red:"#ff4d6d", purple:"#b388ff", orange:"#ff9f43",
+  text:"#e2e8f0", muted:"#64748b"
+};
+
+// ── Utilidades ──
+const brl = v => Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+const hoje = () => new Date().toISOString().slice(0,10);
+const mesHoje = () => new Date().toISOString().slice(0,7);
+const DS = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+const DF = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
+const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+const CATS_RECEITA = ["Salário","Freelance","Investimento","Aluguel","Bonus","Outros"];
+const CATS_GASTO   = ["Alimentação","Transporte","Saúde","Lazer","Educação","Vestuário","Moradia","Outros"];
+
+const dow = s => new Date(s+"T12:00:00").getDay();
+const dlabel = s => { const[,m,d]=s.split("-"); return `${d}/${m}`; };
+const semDeDia = s => { const d=parseInt(s.split("-")[2]); return d<=7?1:d<=14?2:d<=21?3:4; };
+const mesLabel = ym => { const[y,m]=ym.split("-"); return `${MESES[parseInt(m)-1]} ${y}`; };
+const mesAnterior = ym => { const[y,m]=ym.split("-"); const d=new Date(y,m-2,1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
+const mesProximo  = ym => { const[y,m]=ym.split("-"); const d=new Date(y,m,1);   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
+const diasDoMes   = ym => { const[y,m]=ym.split("-"); return new Date(y,m,0).getDate(); };
+const diasDaSemana = (sem,ym) => {
+  const ini=(sem-1)*7+1, fim=Math.min(sem===4?31:sem*7, diasDoMes(ym));
+  return Array.from({length:fim-ini+1},(_,i)=>`${ym}-${String(ini+i).padStart(2,"0")}`);
+};
+const statusCor = (g,lim) => { if(!g)return C.muted; if(g>lim)return C.red; if(g>lim*.8)return C.yellow; return C.green; };
+
+// ── Componentes base ──
+const Bar = ({value,max,color,thin=false}) => {
+  const pct=max>0?Math.min((value/max)*100,100):0;
+  const over=value>max&&max>0;
+  return <div style={{background:"#1e2d45",borderRadius:99,height:thin?5:8,overflow:"hidden",marginTop:4}}>
+    <div style={{width:`${pct}%`,height:"100%",background:over?C.red:color,borderRadius:99,
+      boxShadow:`0 0 8px ${over?C.red:color}`,transition:"width .6s ease"}}/>
+  </div>;
+};
+const Dot = ({color}) => <span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",
+  background:color,boxShadow:`0 0 8px ${color}`,marginRight:6,flexShrink:0}}/>;
+const Card = ({children,style={}}) => <div style={{background:C.card,border:`1px solid ${C.border}`,
+  borderRadius:16,padding:"16px 18px",marginBottom:13,...style}}>{children}</div>;
+const Lbl = ({children,color=C.muted}) => <p style={{color,fontWeight:700,fontSize:11,
+  letterSpacing:1,textTransform:"uppercase",margin:"0 0 12px"}}>{children}</p>;
+const Inp = ({style={},value,onChange,type="text",placeholder,readOnly,min,max}) => (
+  <input type={type} value={value} onChange={onChange} placeholder={placeholder}
+    readOnly={readOnly} min={min} max={max}
+    style={{background:"#0d1626",border:`1px solid ${C.border}`,borderRadius:10,color:C.text,
+      padding:"11px 14px",fontSize:14,outline:"none",width:"100%",...style}}/>
+);
+const Sel = ({value,onChange,options,style={}}) => (
+  <div style={{position:"relative"}}>
+    <select value={value} onChange={onChange} style={{background:"#0d1626",border:`1px solid ${C.border}`,
+      borderRadius:10,color:C.text,padding:"11px 14px",fontSize:14,outline:"none",width:"100%",...style}}>
+      {options.map(o=><option key={o.v||o} value={o.v||o}>{o.l||o}</option>)}
+    </select>
+    <span style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",color:C.muted,pointerEvents:"none"}}>▾</span>
+  </div>
+);
+const Btn = ({children,onClick,color=C.accent,style={},disabled=false}) => (
+  <button onClick={onClick} disabled={disabled} style={{background:`${color}18`,border:`1.5px solid ${color}`,
+    color,borderRadius:10,padding:"11px 18px",cursor:disabled?"not-allowed":"pointer",fontWeight:700,
+    fontSize:14,transition:"all .2s",boxShadow:`0 0 12px ${color}33`,width:"100%",opacity:disabled?.5:1,...style}}>
+    {children}
+  </button>
+);
+
+// ── Navegador de Mês ──
+const MesNav = ({mes,onChange}) => (
+  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+    background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",marginBottom:14}}>
+    <button onClick={()=>onChange(mesAnterior(mes))} style={{background:"none",border:"none",
+      color:C.accent,cursor:"pointer",fontSize:20,padding:"0 8px",lineHeight:1}}>‹</button>
+    <span style={{fontWeight:700,fontSize:15,color:C.text}}>{mesLabel(mes)}</span>
+    <button onClick={()=>onChange(mesProximo(mes))} style={{background:"none",border:"none",
+      color:C.accent,cursor:"pointer",fontSize:20,padding:"0 8px",lineHeight:1}}>›</button>
+  </div>
+);
+
+// ── Modal genérico ──
+const Modal = ({title,onClose,children}) => (
+  <div style={{position:"fixed",inset:0,background:"#000000cc",zIndex:200,display:"flex",alignItems:"flex-end"}}
+    onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:"20px 20px 0 0",
+      width:"100%",maxWidth:500,margin:"0 auto",padding:"20px 18px 30px",maxHeight:"90vh",overflowY:"auto"}}
+      className="fade-in">
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+        <span style={{fontWeight:700,fontSize:16}}>{title}</span>
+        <button onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer"}}>✕</button>
+      </div>
+      {children}
+    </div>
+  </div>
+);
+
+// ════════════════════════════════════════════
+// HOOKS DE DADOS (SQLite)
+// ════════════════════════════════════════════
+function useReceitas(mes) {
+  const [lista, setLista] = useState([]);
+  const reload = useCallback(() => {
+    setLista(dq("SELECT * FROM receitas WHERE mes=? ORDER BY data DESC,id DESC",[mes]));
+  }, [mes]);
+  useEffect(()=>reload(),[reload]);
+  const add = (desc,valor,data,cat) => {
+    dr("INSERT INTO receitas(descricao,valor,mes,data,categoria) VALUES(?,?,?,?,?)",[desc,valor,mes,data,cat]);
+    reload();
+  };
+  const del = id => { dr("DELETE FROM receitas WHERE id=?",[id]); reload(); };
+  const total = lista.reduce((s,r)=>s+r.valor,0);
+  return {lista,total,add,del,reload};
+}
+
+function useFixas() {
+  const [lista, setLista] = useState([]);
+  const reload = useCallback(()=>setLista(dq("SELECT * FROM fixas WHERE ativo=1 ORDER BY id")),[]);
+  useEffect(()=>reload(),[reload]);
+  const add = (desc,valor,cat) => { dr("INSERT INTO fixas(descricao,valor,categoria) VALUES(?,?,?)",[desc,valor,cat]); reload(); };
+  const del = id => { dr("DELETE FROM fixas WHERE id=?",[id]); reload(); };
+  const total = lista.reduce((s,f)=>s+f.valor,0);
+  return {lista,total,add,del,reload};
+}
+
+function useGastos(mes) {
+  const [lista, setLista] = useState([]);
+  const reload = useCallback(()=>{
+    setLista(dq("SELECT * FROM gastos WHERE mes=? ORDER BY data DESC,id DESC",[mes]));
+  },[mes]);
+  useEffect(()=>reload(),[reload]);
+  const add = (desc,valor,data,cat) => {
+    const sem=semDeDia(data);
+    dr("INSERT INTO gastos(descricao,valor,data,mes,semana,categoria) VALUES(?,?,?,?,?,?)",[desc,valor,data,mes,sem,cat]);
+    reload();
+  };
+  const del = id => { dr("DELETE FROM gastos WHERE id=?",[id]); reload(); };
+  const total = lista.reduce((s,g)=>s+g.valor,0);
+  const porDia = data => lista.filter(g=>g.data===data).reduce((s,g)=>s+g.valor,0);
+  const porSem = sem => lista.filter(g=>g.semana===sem).reduce((s,g)=>s+g.valor,0);
+  return {lista,total,porDia,porSem,add,del,reload};
+}
+
+// ════════════════════════════════════════════
+// SEÇÃO: RECEITAS
+// ════════════════════════════════════════════
+function SecaoReceitas({mes,onMesChange,fixas,limSem,limDia}) {
+  const rec = useReceitas(mes);
+  const [modal, setModal] = useState(false);
+  const [desc, setDesc] = useState("");
+  const [valor, setValor] = useState("");
+  const [data, setData] = useState(`${mes}-01`);
+  const [cat, setCat] = useState("Salário");
+
+  useEffect(()=>setData(`${mes}-01`),[mes]);
+
+  const reserva = rec.total * 0.125;
+  const saldo   = rec.total - reserva - fixas.total;
+  const limS    = saldo/4;
+  const limD    = saldo/28;
+
+  const salvar = () => {
+    const v=parseFloat(valor);
+    if(!desc||!v||!data){alert("Preencha todos os campos");return;}
+    rec.add(desc,v,data,cat);
+    setDesc("");setValor("");setCat("Salário");setModal(false);
+  };
+
+  return(
+    <div className="fade-in">
+      <MesNav mes={mes} onChange={onMesChange}/>
+
+      {/* Resumo financeiro do mês */}
+      {rec.total>0&&(
+        <Card style={{border:`1px solid ${C.green}44`,background:"#00ff9d06",marginBottom:13}}>
+          <Lbl color={C.green}>📊 Resumo — {mesLabel(mes)}</Lbl>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+            {[
+              {l:"Total Receitas",v:rec.total,c:C.green},
+              {l:"Reserva (12.5%)",v:reserva,c:C.purple},
+              {l:"Total Fixas",v:fixas.total,c:C.yellow},
+              {l:"Saldo Livre",v:saldo,c:saldo>0?C.accent:C.red},
+            ].map(x=>(
+              <div key={x.l} style={{background:"#ffffff08",borderRadius:10,padding:"10px 12px"}}>
+                <div style={{color:C.muted,fontSize:10,marginBottom:4}}>{x.l}</div>
+                <div style={{color:x.c,fontWeight:800,fontSize:14}}>{brl(x.v)}</div>
+              </div>
+            ))}
+          </div>
+          {saldo>0&&(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div style={{background:`${C.accent}12`,borderRadius:10,padding:"10px",textAlign:"center"}}>
+                <div style={{color:C.muted,fontSize:10,marginBottom:3}}>Limite/semana</div>
+                <div style={{color:C.accent,fontWeight:800,fontSize:15}}>{brl(limS)}</div>
+              </div>
+              <div style={{background:`${C.purple}12`,borderRadius:10,padding:"10px",textAlign:"center"}}>
+                <div style={{color:C.muted,fontSize:10,marginBottom:3}}>Limite/dia</div>
+                <div style={{color:C.purple,fontWeight:800,fontSize:15}}>{brl(limD)}</div>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Lista de receitas */}
+      <Card>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <Lbl color={C.green} style={{margin:0}}>💰 Receitas — {mesLabel(mes)}</Lbl>
+          <button onClick={()=>setModal(true)} style={{background:`${C.green}18`,border:`1px solid ${C.green}`,
+            color:C.green,borderRadius:8,padding:"6px 14px",cursor:"pointer",fontWeight:700,fontSize:13}}>
+            + Adicionar
+          </button>
+        </div>
+
+        {rec.lista.length===0
+          ?<div style={{textAlign:"center",color:C.muted,padding:"20px 0",fontSize:13}}>
+            Nenhuma receita em {mesLabel(mes)} 💡
+          </div>
+          :rec.lista.map(r=>(
+            <div key={r.id} style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",
+              padding:"12px 0",borderBottom:`1px solid ${C.border}`}}>
+              <div style={{flex:1,marginRight:10}}>
+                <div style={{fontWeight:700,fontSize:14,color:C.text}}>{r.descricao}</div>
+                <div style={{fontSize:11,color:C.muted,marginTop:3}}>
+                  📅 {dlabel(r.data)} · 🏷 {r.categoria}
+                </div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:12}}>
+                <span style={{color:C.green,fontWeight:800,fontSize:15}}>{brl(r.valor)}</span>
+                <button onClick={()=>{if(confirm("Remover esta receita?"))rec.del(r.id);}}
+                  style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:18,opacity:.7}}>✕</button>
+              </div>
+            </div>
+          ))}
+
+        {rec.lista.length>0&&(
+          <div style={{display:"flex",justifyContent:"space-between",paddingTop:12,fontWeight:700}}>
+            <span style={{color:C.muted,fontSize:13}}>Total do mês</span>
+            <span style={{color:C.green,fontSize:16}}>{brl(rec.total)}</span>
+          </div>
+        )}
+      </Card>
+
+      {/* Contas fixas */}
+      <FixasCard fixas={fixas}/>
+
+      {/* Modal adicionar receita */}
+      {modal&&(
+        <Modal title="+ Nova Receita" onClose={()=>setModal(false)}>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <div>
+              <div style={{color:C.muted,fontSize:12,marginBottom:5}}>Descrição</div>
+              <Inp placeholder="Ex: Salário, Freela, Dividendos..." value={desc} onChange={e=>setDesc(e.target.value)}/>
+            </div>
+            <div>
+              <div style={{color:C.muted,fontSize:12,marginBottom:5}}>Valor (R$)</div>
+              <Inp type="number" placeholder="0,00" value={valor} onChange={e=>setValor(e.target.value)}/>
+            </div>
+            <div>
+              <div style={{color:C.muted,fontSize:12,marginBottom:5}}>Data de recebimento</div>
+              <Inp type="date" value={data} onChange={e=>setData(e.target.value)}/>
+            </div>
+            <div>
+              <div style={{color:C.muted,fontSize:12,marginBottom:5}}>Categoria</div>
+              <Sel value={cat} onChange={e=>setCat(e.target.value)} options={CATS_RECEITA}/>
+            </div>
+            <Btn onClick={salvar} color={C.green} style={{marginTop:6}}>Salvar Receita</Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════
+// SEÇÃO: CONTAS FIXAS (card reutilizável)
+// ════════════════════════════════════════════
+function FixasCard({fixas}) {
+  const [modal, setModal] = useState(false);
+  const [desc, setDesc] = useState("");
+  const [valor, setValor] = useState("");
+  const [cat, setCat] = useState("Moradia");
+  const CATS_FIXAS = ["Moradia","Financiamento","Transporte","Educação","Saúde","Assinatura","Outros"];
+
+  const salvar = () => {
+    const v=parseFloat(valor);
+    if(!desc||!v){alert("Preencha nome e valor");return;}
+    fixas.add(desc,v,cat);
+    setDesc("");setValor("");setModal(false);
+  };
+
+  return(
+    <>
+    <Card>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <Lbl color={C.yellow} style={{margin:0}}>📋 Contas Fixas</Lbl>
+        <button onClick={()=>setModal(true)} style={{background:`${C.yellow}18`,border:`1px solid ${C.yellow}`,
+          color:C.yellow,borderRadius:8,padding:"6px 14px",cursor:"pointer",fontWeight:700,fontSize:13}}>
+          + Adicionar
+        </button>
+      </div>
+      {fixas.lista.length===0
+        ?<div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"10px 0"}}>
+          Nenhuma conta fixa cadastrada
+        </div>
+        :fixas.lista.map(f=>(
+          <div key={f.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+            padding:"10px 0",borderBottom:`1px solid ${C.border}`}}>
+            <div>
+              <div style={{fontWeight:600,fontSize:14}}>{f.descricao}</div>
+              <div style={{fontSize:11,color:C.muted}}>🏷 {f.categoria}</div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <span style={{color:C.yellow,fontWeight:700,fontSize:14}}>{brl(f.valor)}</span>
+              <button onClick={()=>{if(confirm("Remover esta conta fixa?"))fixas.del(f.id);}}
+                style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:18,opacity:.7}}>✕</button>
+            </div>
+          </div>
+        ))}
+      {fixas.total>0&&(
+        <div style={{display:"flex",justifyContent:"space-between",paddingTop:12,fontWeight:700}}>
+          <span style={{color:C.muted,fontSize:13}}>Total fixas</span>
+          <span style={{color:C.yellow,fontSize:15}}>{brl(fixas.total)}</span>
+        </div>
+      )}
+    </Card>
+    {modal&&(
+      <Modal title="+ Nova Conta Fixa" onClose={()=>setModal(false)}>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <div>
+            <div style={{color:C.muted,fontSize:12,marginBottom:5}}>Descrição</div>
+            <Inp placeholder="Ex: Financiamento casa, Internet..." value={desc} onChange={e=>setDesc(e.target.value)}/>
+          </div>
+          <div>
+            <div style={{color:C.muted,fontSize:12,marginBottom:5}}>Valor mensal (R$)</div>
+            <Inp type="number" placeholder="0,00" value={valor} onChange={e=>setValor(e.target.value)}/>
+          </div>
+          <div>
+            <div style={{color:C.muted,fontSize:12,marginBottom:5}}>Categoria</div>
+            <Sel value={cat} onChange={e=>setCat(e.target.value)} options={CATS_FIXAS}/>
+          </div>
+          <Btn onClick={salvar} color={C.yellow} style={{marginTop:6}}>Salvar Conta Fixa</Btn>
+        </div>
+      </Modal>
+    )}
+    </>
+  );
+}
+
+// ════════════════════════════════════════════
+// SEÇÃO: GASTOS
+// ════════════════════════════════════════════
+function SecaoGastos({mes,onMesChange,fixasTotal,receitaTotal}) {
+  const g    = useGastos(mes);
+  const [sem, setSem] = useState(semDeDia(hoje()));
+  const [dia, setDia] = useState(hoje());
+  const [subTab, setSubTab] = useState("dias");
+  const [modal, setModal] = useState(false);
+  const [desc,  setDesc]  = useState("");
+  const [valor, setValor] = useState("");
+  const [data,  setData]  = useState(hoje());
+  const [cat,   setCat]   = useState("Alimentação");
+
+  const reserva  = receitaTotal * 0.125;
+  const saldo    = receitaTotal - reserva - fixasTotal;
+  const limSem   = saldo/4;
+  const limDia   = saldo/28;
+  const saldoRest= saldo - g.total;
+  const mesAtual = mes===mesHoje();
+
+  const salvar = () => {
+    const v=parseFloat(valor);
+    if(!desc||!v||!data){alert("Preencha todos os campos");return;}
+    g.add(desc,v,data,cat);
+    setDesc("");setValor("");setModal(false);
+  };
+
+  return(
+    <div className="fade-in">
+      <MesNav mes={mes} onChange={onMesChange}/>
+
+      {/* resumo rápido */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:13}}>
+        {[
+          {l:"Gasto no mês",v:g.total,c:C.red},
+          {l:"Saldo restante",v:saldoRest,c:saldoRest>=0?C.green:C.red},
+        ].map(x=>(
+          <div key={x.l} style={{background:C.card,border:`1px solid ${x.c}33`,borderRadius:14,padding:"14px"}}>
+            <div style={{color:C.muted,fontSize:11,marginBottom:4}}>{x.l}</div>
+            <div style={{color:x.c,fontSize:15,fontWeight:800}}>{brl(x.v)}</div>
+          </div>
+        ))}
+      </div>
+
+      {mesAtual&&(
+        <Card style={{border:`1px solid ${C.accent}44`,marginBottom:13}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+            <span style={{fontSize:13,fontWeight:700}}>📆 Hoje — {dlabel(hoje())}</span>
+            <span style={{color:statusCor(g.porDia(hoje()),limDia),fontWeight:800,fontSize:15}}>
+              {brl(g.porDia(hoje()))}
+            </span>
+          </div>
+          <Bar value={g.porDia(hoje())} max={limDia} color={C.accent}/>
+          <div style={{fontSize:11,color:C.muted,marginTop:5,textAlign:"right"}}>
+            Limite: {brl(limDia)} |{" "}
+            {limDia-g.porDia(hoje())>=0
+              ?<span style={{color:C.green}}>sobram {brl(limDia-g.porDia(hoje()))}</span>
+              :<span style={{color:C.red}}>excedeu {brl(Math.abs(limDia-g.porDia(hoje())))}</span>}
+          </div>
+        </Card>
+      )}
+
+      {/* sub-tabs */}
+      <div style={{display:"flex",gap:6,marginBottom:14}}>
+        {[{id:"dias",l:"📅 Dias"},{id:"semanas",l:"🗓 Semanas"},{id:"lista",l:"📋 Todos"}].map(t=>(
+          <button key={t.id} onClick={()=>setSubTab(t.id)} style={{flex:1,padding:"9px 4px",borderRadius:10,
+            border:`1.5px solid ${subTab===t.id?C.accent:C.border}`,
+            background:subTab===t.id?`${C.accent}22`:"transparent",
+            color:subTab===t.id?C.accent:C.muted,cursor:"pointer",fontWeight:600,fontSize:12}}>
+            {t.l}
+          </button>
+        ))}
+      </div>
+
+      {/* ── sub: dias ── */}
+      {subTab==="dias"&&(
+        <>
+          <div style={{display:"flex",gap:6,marginBottom:13}}>
+            {[1,2,3,4].map(s=>(
+              <button key={s} onClick={()=>setSem(s)} style={{flex:1,padding:"8px 4px",borderRadius:10,
+                border:`1.5px solid ${sem===s?statusCor(g.porSem(s),limSem):C.border}`,
+                background:sem===s?`${statusCor(g.porSem(s),limSem)}22`:"transparent",
+                color:sem===s?statusCor(g.porSem(s),limSem):C.muted,cursor:"pointer",fontWeight:700,fontSize:13}}>
+                S{s}
+              </button>
+            ))}
+          </div>
+          <Card>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+              <span style={{fontWeight:700,fontSize:13}}>Semana {sem}</span>
+              <span style={{color:statusCor(g.porSem(sem),limSem),fontWeight:800,fontSize:15}}>{brl(g.porSem(sem))}</span>
+            </div>
+            <Bar value={g.porSem(sem)} max={limSem} color={statusCor(g.porSem(sem),limSem)}/>
+            <div style={{fontSize:11,color:C.muted,marginTop:5,textAlign:"right"}}>
+              Limite: {brl(limSem)} | Restam:{" "}
+              <span style={{color:limSem-g.porSem(sem)>=0?C.green:C.red,fontWeight:700}}>
+                {brl(limSem-g.porSem(sem))}
+              </span>
+            </div>
+          </Card>
+          <Card>
+            <Lbl color={C.muted}>Dias — Semana {sem}</Lbl>
+            {diasDaSemana(sem,mes).map(d=>{
+              const t=g.porDia(d); const isH=d===hoje();
+              const dd=parseInt(d.split("-")[2]);
+              const fut=d>hoje()&&mesAtual;
+              return(
+                <div key={d} onClick={()=>{if(!fut){setDia(d);setData(d);}}}
+                  style={{marginBottom:7,padding:"10px 12px",background:dia===d&&!fut?"#0d2040":"#0d1626",
+                    borderRadius:10,border:`1px solid ${dia===d?C.accent:statusCor(t,limDia)}33`,
+                    cursor:fut?"default":"pointer",opacity:fut?.35:1}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontSize:13,display:"flex",alignItems:"center"}}>
+                      <Dot color={t===0?C.muted:statusCor(t,limDia)}/>
+                      <span style={{color:C.muted,fontSize:11,marginRight:4}}>{DS[dow(d)]}</span>
+                      {String(dd).padStart(2,"0")}/{d.slice(5,7)}
+                      {isH&&<span style={{marginLeft:6,fontSize:10,color:C.accent,
+                        border:`1px solid ${C.accent}`,borderRadius:4,padding:"1px 5px"}}>HOJE</span>}
+                    </span>
+                    <span style={{color:t===0?C.muted:statusCor(t,limDia),fontWeight:700,fontSize:13}}>
+                      {t===0?"—":brl(t)}
+                    </span>
+                  </div>
+                  {t>0&&<Bar value={t} max={limDia} color={statusCor(t,limDia)} thin/>}
+                </div>
+              );
+            })}
+          </Card>
+          {g.lista.filter(x=>x.data===dia).length>0&&(
+            <Card>
+              <Lbl color={C.muted}>Gastos — {dlabel(dia)} ({DS[dow(dia)]})</Lbl>
+              {g.lista.filter(x=>x.data===dia).map(x=>(
+                <div key={x.id} style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",
+                  padding:"9px 0",borderBottom:`1px solid ${C.border}`}}>
+                  <div style={{flex:1,marginRight:10}}>
+                    <div style={{fontWeight:600,fontSize:13}}>{x.descricao}</div>
+                    <div style={{fontSize:11,color:C.muted}}>🏷 {x.categoria}</div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{color:C.yellow,fontWeight:700}}>{brl(x.valor)}</span>
+                    <button onClick={()=>{if(confirm("Remover?"))g.del(x.id);}}
+                      style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:18}}>✕</button>
+                  </div>
+                </div>
+              ))}
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* ── sub: semanas ── */}
+      {subTab==="semanas"&&(
+        <>
+          {[1,2,3,4].map(s=>{
+            const gS=g.porSem(s);
+            const dias=(s-1)*7+1;
+            const diaFim=Math.min(s===4?31:s*7,diasDoMes(mes));
+            return(
+              <Card key={s} style={{border:`1px solid ${statusCor(gS,limSem)}33`}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                  <span style={{fontWeight:700,fontSize:14}}>
+                    Semana {s} <span style={{color:C.muted,fontSize:12,fontWeight:400}}>dias {dias}–{diaFim}</span>
+                  </span>
+                  <span style={{color:statusCor(gS,limSem),fontWeight:800,fontSize:16}}>{brl(gS)}</span>
+                </div>
+                <Bar value={gS} max={limSem} color={statusCor(gS,limSem)}/>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:C.muted,marginTop:5}}>
+                  <span>Limite: {brl(limSem)}</span>
+                  <span>Restam: <span style={{color:limSem-gS>=0?C.green:C.red,fontWeight:700}}>{brl(limSem-gS)}</span></span>
+                </div>
+                {g.lista.filter(x=>x.semana===s).length>0&&(
+                  <div style={{marginTop:12,borderTop:`1px solid ${C.border}`,paddingTop:10}}>
+                    {g.lista.filter(x=>x.semana===s).slice(0,3).map(x=>(
+                      <div key={x.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,
+                        color:C.muted,padding:"3px 0"}}>
+                        <span>{x.descricao}</span>
+                        <span style={{color:C.yellow}}>{brl(x.valor)}</span>
+                      </div>
+                    ))}
+                    {g.lista.filter(x=>x.semana===s).length>3&&(
+                      <div style={{fontSize:11,color:C.muted,marginTop:4}}>
+                        +{g.lista.filter(x=>x.semana===s).length-3} lançamentos
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </>
+      )}
+
+      {/* ── sub: todos ── */}
+      {subTab==="lista"&&(
+        <Card>
+          <Lbl color={C.muted}>Todos os gastos — {mesLabel(mes)}</Lbl>
+          {g.lista.length===0
+            ?<div style={{textAlign:"center",color:C.muted,padding:"16px 0",fontSize:13}}>Nenhum gasto em {mesLabel(mes)}</div>
+            :g.lista.map(x=>(
+              <div key={x.id} style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",
+                padding:"10px 0",borderBottom:`1px solid ${C.border}`}}>
+                <div style={{flex:1,marginRight:10}}>
+                  <div style={{fontWeight:600,fontSize:13}}>{x.descricao}</div>
+                  <div style={{fontSize:11,color:C.muted}}>📅 {dlabel(x.data)} · {DS[dow(x.data)]} · 🏷 {x.categoria}</div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{color:C.yellow,fontWeight:700}}>{brl(x.valor)}</span>
+                  <button onClick={()=>{if(confirm("Remover?"))g.del(x.id);}}
+                    style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:18}}>✕</button>
+                </div>
+              </div>
+            ))}
+        </Card>
+      )}
+
+      {/* FAB registrar */}
+      <button onClick={()=>setModal(true)}
+        style={{position:"fixed",bottom:80,right:18,width:56,height:56,borderRadius:"50%",
+          background:C.green,border:"none",color:"#000",fontSize:26,cursor:"pointer",
+          boxShadow:`0 0 20px ${C.green}66`,zIndex:50,display:"flex",alignItems:"center",justifyContent:"center",
+          fontWeight:900}}>
+        +
+      </button>
+
+      {modal&&(
+        <Modal title="+ Registrar Gasto" onClose={()=>setModal(false)}>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <div>
+              <div style={{color:C.muted,fontSize:12,marginBottom:5}}>Descrição</div>
+              <Inp placeholder="Ex: Supermercado, Uber, Cinema..." value={desc} onChange={e=>setDesc(e.target.value)}/>
+            </div>
+            <div>
+              <div style={{color:C.muted,fontSize:12,marginBottom:5}}>Valor (R$)</div>
+              <Inp type="number" placeholder="0,00" value={valor} onChange={e=>setValor(e.target.value)}/>
+            </div>
+            <div>
+              <div style={{color:C.muted,fontSize:12,marginBottom:5}}>Data</div>
+              <Inp type="date" value={data} onChange={e=>setData(e.target.value)}/>
+            </div>
+            <div>
+              <div style={{color:C.muted,fontSize:12,marginBottom:5}}>Categoria</div>
+              <Sel value={cat} onChange={e=>setCat(e.target.value)} options={CATS_GASTO}/>
+            </div>
+            <Btn onClick={salvar} color={C.green} style={{marginTop:6}}>Salvar Gasto</Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════
+// SEÇÃO: ANÁLISE
+// ════════════════════════════════════════════
+function SecaoAnalise({mes,onMesChange,fixasTotal,receitaTotal}) {
+  const g = useGastos(mes);
+  const reserva = receitaTotal*.125;
+  const saldo   = receitaTotal-reserva-fixasTotal;
+  const limDia  = saldo/28;
+
+  const diasUnicos = [...new Set(g.lista.map(x=>x.data))].sort();
+  const statsDow = Array.from({length:7},(_,d)=>{
+    const dts=diasUnicos.filter(x=>dow(x)===d);
+    const tot=dts.reduce((s,x)=>s+g.porDia(x),0);
+    const med=dts.length?tot/dts.length:0;
+    return{d,nome:DS[d],full:DF[d],tot,med,n:dts.length};
+  });
+  const comDados=statsDow.filter(x=>x.n>0);
+  const piorDow=comDados.length?comDados.reduce((a,b)=>b.med>a.med?b:a,comDados[0]):null;
+  const melhorDow=comDados.length?comDados.reduce((a,b)=>b.med<a.med?b:a,comDados[0]):null;
+  const rankDias=[...diasUnicos].sort((a,b)=>g.porDia(b)-g.porDia(a));
+
+  // por categoria
+  const porCat = {};
+  g.lista.forEach(x=>{ porCat[x.categoria]=(porCat[x.categoria]||0)+x.valor; });
+  const catRank = Object.entries(porCat).sort((a,b)=>b[1]-a[1]);
+
+  return(
+    <div className="fade-in">
+      <MesNav mes={mes} onChange={onMesChange}/>
+
+      {comDados.length===0&&(
+        <Card style={{textAlign:"center",padding:"32px 18px"}}>
+          <div style={{fontSize:36,marginBottom:12}}>📊</div>
+          <div style={{color:C.muted,fontSize:14}}>Registre gastos em {mesLabel(mes)} para ver a análise</div>
+        </Card>
+      )}
+
+      {comDados.length>0&&(
+        <>
+          {/* pior / melhor */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:13}}>
+            <div style={{background:C.card,border:`1px solid ${C.red}33`,borderRadius:14,padding:"14px",textAlign:"center"}}>
+              <div style={{fontSize:22,marginBottom:6}}>🔴</div>
+              <div style={{color:C.muted,fontSize:10,marginBottom:4}}>Pior dia da semana</div>
+              <div style={{color:C.red,fontWeight:800,fontSize:14}}>{piorDow?.full}</div>
+              <div style={{color:C.muted,fontSize:11,marginTop:2}}>média {brl(piorDow?.med)}</div>
+            </div>
+            <div style={{background:C.card,border:`1px solid ${C.green}33`,borderRadius:14,padding:"14px",textAlign:"center"}}>
+              <div style={{fontSize:22,marginBottom:6}}>🟢</div>
+              <div style={{color:C.muted,fontSize:10,marginBottom:4}}>Melhor dia da semana</div>
+              <div style={{color:C.green,fontWeight:800,fontSize:14}}>{melhorDow?.full}</div>
+              <div style={{color:C.muted,fontSize:11,marginTop:2}}>média {brl(melhorDow?.med)}</div>
+            </div>
+          </div>
+
+          {/* média por dow */}
+          <Card>
+            <Lbl color={C.muted}>📊 Média por Dia da Semana</Lbl>
+            {statsDow.map(d=>{
+              if(d.n===0)return null;
+              const maxM=Math.max(...comDados.map(x=>x.med),1);
+              return(
+                <div key={d.d} style={{marginBottom:14}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:2}}>
+                    <span style={{display:"flex",alignItems:"center",gap:6}}>
+                      {d.d===piorDow?.d&&<span style={{fontSize:10,padding:"1px 6px",background:`${C.red}22`,color:C.red,borderRadius:4}}>PIOR</span>}
+                      {d.d===melhorDow?.d&&<span style={{fontSize:10,padding:"1px 6px",background:`${C.green}22`,color:C.green,borderRadius:4}}>MELHOR</span>}
+                      <span style={{fontWeight:600}}>{d.full}</span>
+                    </span>
+                    <span style={{fontWeight:700,color:statusCor(d.med,limDia)}}>{brl(d.med)}</span>
+                  </div>
+                  <Bar value={d.med} max={maxM} color={d.d===piorDow?.d?C.red:C.accent} thin/>
+                  <div style={{fontSize:10,color:C.muted,marginTop:3}}>{d.n} registro{d.n>1?"s":""} · total {brl(d.tot)}</div>
+                </div>
+              );
+            })}
+          </Card>
+
+          {/* top piores dias */}
+          {rankDias.slice(0,5).length>0&&(
+            <Card>
+              <Lbl color={C.red}>🔴 Top 5 Piores Dias</Lbl>
+              {rankDias.slice(0,5).map((data,i)=>{
+                const tot=g.porDia(data);
+                return(
+                  <div key={data} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,
+                    padding:"10px 12px",background:`${C.red}08`,borderRadius:10,border:`1px solid ${C.red}22`}}>
+                    <span style={{fontSize:17,fontWeight:900,color:C.red,minWidth:24}}>#{i+1}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13,fontWeight:700}}>
+                        {dlabel(data)} <span style={{color:C.muted,fontWeight:400}}>— {DF[dow(data)]}</span>
+                      </div>
+                      <Bar value={tot} max={limDia} color={C.red} thin/>
+                      <div style={{fontSize:10,color:C.muted,marginTop:2}}>{limDia>0?Math.round((tot/limDia)*100):0}% do limite</div>
+                    </div>
+                    <span style={{color:C.red,fontWeight:800,fontSize:14}}>{brl(tot)}</span>
+                  </div>
+                );
+              })}
+            </Card>
+          )}
+
+          {/* top melhores dias */}
+          {rankDias.length>0&&(
+            <Card>
+              <Lbl color={C.green}>🟢 Top 5 Melhores Dias</Lbl>
+              {[...rankDias].reverse().slice(0,5).map((data,i)=>{
+                const tot=g.porDia(data);
+                return(
+                  <div key={data} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,
+                    padding:"10px 12px",background:`${C.green}08`,borderRadius:10,border:`1px solid ${C.green}22`}}>
+                    <span style={{fontSize:17,fontWeight:900,color:C.green,minWidth:24}}>#{i+1}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13,fontWeight:700}}>
+                        {dlabel(data)} <span style={{color:C.muted,fontWeight:400}}>— {DF[dow(data)]}</span>
+                      </div>
+                      <Bar value={tot} max={limDia} color={C.green} thin/>
+                      <div style={{fontSize:10,color:C.muted,marginTop:2}}>{limDia>0?Math.round((tot/limDia)*100):0}% do limite</div>
+                    </div>
+                    <span style={{color:C.green,fontWeight:800,fontSize:14}}>{brl(tot)}</span>
+                  </div>
+                );
+              })}
+            </Card>
+          )}
+
+          {/* por categoria */}
+          {catRank.length>0&&(
+            <Card>
+              <Lbl color={C.muted}>🏷 Gastos por Categoria</Lbl>
+              {catRank.map(([cat,val])=>(
+                <div key={cat} style={{marginBottom:12}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:2}}>
+                    <span style={{fontWeight:600}}>{cat}</span>
+                    <span style={{color:C.yellow,fontWeight:700}}>{brl(val)}</span>
+                  </div>
+                  <Bar value={val} max={catRank[0][1]} color={C.orange} thin/>
+                  <div style={{fontSize:10,color:C.muted,marginTop:2}}>
+                    {g.total>0?((val/g.total)*100).toFixed(1):0}% do total gasto
+                  </div>
+                </div>
+              ))}
+            </Card>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════
+// SEÇÃO: IA CHAT
+// ════════════════════════════════════════════
+function SecaoIA({mes,fixasTotal,receitaTotal}) {
+  const g = useGastos(mes);
+  const [msgs, setMsgs] = useState([]);
+  const [txt, setTxt]   = useState("");
+  const [load, setLoad] = useState(false);
+  const chatRef = useRef(null);
+
+  const reserva  = receitaTotal*.125;
+  const saldo    = receitaTotal-reserva-fixasTotal;
+  const limSem   = saldo/4;
+  const limDia   = saldo/28;
+
+  useEffect(()=>chatRef.current?.scrollIntoView({behavior:"smooth"}),[msgs]);
+
+  const enviar = async(pergunta) => {
+    if(!pergunta.trim())return;
+    setLoad(true);
+    setMsgs(p=>[...p,{r:"user",t:pergunta}]);
+    setTxt("");
+
+    const diasUnicos=[...new Set(g.lista.map(x=>x.data))].sort();
+    const statsDow=Array.from({length:7},(_,d)=>{
+      const dts=diasUnicos.filter(x=>dow(x)===d);
+      const tot=dts.reduce((s,x)=>s+g.porDia(x),0);
+      const med=dts.length?tot/dts.length:0;
+      return{d,full:DF[d],med,n:dts.length};
+    });
+    const piores=[...diasUnicos].sort((a,b)=>g.porDia(b)-g.porDia(a)).slice(0,5);
+    const piorDow=statsDow.filter(x=>x.n>0).reduce((a,b)=>b.med>a.med?b:a,{med:0,full:"?"});
+
+    const sys=`Você é o FinIA, assistente financeiro pessoal inteligente. Responda em português, de forma direta, estratégica e empática. Use emojis com moderação. Seja específico nos números.
+
+MÊS ANALISADO: ${mesLabel(mes)}
+DADOS: Receita ${brl(receitaTotal)} | Reserva ${brl(reserva)} | Fixas ${brl(fixasTotal)} | Saldo livre ${brl(saldo)} | Limite/sem ${brl(limSem)} | Limite/dia ${brl(limDia)} | Gasto total ${brl(g.total)} | Restante ${brl(saldo-g.total)}
+SEMANAS: S1 ${brl(g.porSem(1))} | S2 ${brl(g.porSem(2))} | S3 ${brl(g.porSem(3))} | S4 ${brl(g.porSem(4))}
+PIOR DIA DA SEMANA: ${piorDow.full} (média ${brl(piorDow.med)})
+MÉDIAS/DOW: ${statsDow.filter(x=>x.n>0).map(x=>`${x.full}: ${brl(x.med)}`).join(", ")||"sem dados"}
+TOP PIORES DIAS: ${piores.map((d,i)=>`${i+1}º ${dlabel(d)}: ${brl(g.porDia(d))}`).join(", ")||"sem dados"}
+Responda com análise dos padrões, pontos críticos e 3 ações práticas. Máx 220 palavras.`;
+
+    try {
+      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,
+          system:sys,messages:[{role:"user",content:pergunta}]})});
+      const data=await res.json();
+      const reply=data.content?.find(b=>b.type==="text")?.text||"Não consegui processar.";
+      setMsgs(p=>[...p,{r:"ai",t:reply}]);
+    } catch(e) {
+      setMsgs(p=>[...p,{r:"ai",t:"Erro ao conectar. Verifique sua internet."}]);
+    }
+    setLoad(false);
+  };
+
+  return(
+    <div className="fade-in">
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,
+        padding:"16px 18px",marginBottom:13,minHeight:320,maxHeight:460,overflowY:"auto",
+        display:"flex",flexDirection:"column",gap:10}}>
+        {msgs.length===0&&(
+          <div style={{textAlign:"center",color:C.muted,padding:"20px 0"}}>
+            <div style={{fontSize:34,marginBottom:10}}>🤖</div>
+            <p style={{fontSize:13,lineHeight:1.7,marginBottom:16}}>
+              Olá! Sou o FinIA. Analiso seus dados de <strong style={{color:C.accent}}>{mesLabel(mes)}</strong> e sugiro estratégias personalizadas.
+            </p>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {["Como estou indo em "+MESES[parseInt(mes.split("-")[1])-1]+"?",
+                "Quais meus piores dias de gasto?",
+                "Como controlar dias críticos?",
+                "Onde posso economizar mais?"].map(q=>(
+                <button key={q} onClick={()=>enviar(q)}
+                  style={{background:`${C.purple}18`,border:`1.5px solid ${C.purple}`,color:C.purple,
+                    borderRadius:10,padding:"9px 12px",cursor:"pointer",fontWeight:700,fontSize:12,textAlign:"left"}}>
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {msgs.map((m,i)=>(
+          <div key={i} style={{alignSelf:m.r==="user"?"flex-end":"flex-start",maxWidth:"86%",
+            background:m.r==="user"?`${C.accent}22`:`${C.purple}12`,
+            border:`1px solid ${m.r==="user"?C.accent:C.purple}33`,
+            borderRadius:12,padding:"10px 14px",fontSize:13,lineHeight:1.65,color:C.text,whiteSpace:"pre-wrap"}}>
+            {m.r==="ai"&&<div style={{color:C.purple,fontSize:11,fontWeight:700,marginBottom:4}}>🤖 FinIA</div>}
+            {m.t}
+          </div>
+        ))}
+        {load&&<div style={{alignSelf:"flex-start",background:`${C.purple}12`,border:`1px solid ${C.purple}33`,
+          borderRadius:12,padding:"10px 14px",fontSize:13,color:C.purple}}>🤖 Analisando...</div>}
+        <div ref={chatRef}/>
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        <input style={{flex:1,background:"#0d1626",border:`1px solid ${C.border}`,borderRadius:10,
+          color:C.text,padding:"11px 14px",fontSize:14,outline:"none"}}
+          placeholder="Pergunte algo ao FinIA..."
+          value={txt} onChange={e=>setTxt(e.target.value)}
+          onKeyDown={e=>{if(e.key==="Enter"&&txt.trim())enviar(txt);}}/>
+        <button onClick={()=>enviar(txt)}
+          style={{background:`${C.purple}18`,border:`1.5px solid ${C.purple}`,color:C.purple,
+            borderRadius:10,padding:"11px 18px",cursor:"pointer",fontWeight:700,fontSize:16,flexShrink:0,
+            boxShadow:`0 0 12px ${C.purple}33`}}>→</button>
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════
+// SEÇÃO: CONTROLE MENSAL
+// ════════════════════════════════════════════
+function SecaoMensal({mes,onMesChange,fixasTotal}){
+  const [rev,setRev]=useState(0);
+  const d=useMemo(()=>{
+    const rec=dq("SELECT SUM(valor) as t FROM receitas WHERE mes=?",[mes])[0]?.t||0;
+    const gas=dq("SELECT SUM(valor) as t FROM gastos WHERE mes=?",[mes])[0]?.t||0;
+    const reserva=rec*.125;
+    const saldo=rec-reserva-fixasTotal-gas;
+    const taxa=rec>0?((rec-gas-fixasTotal)/rec)*100:0;
+    const sems=[1,2,3,4].map(s=>dq("SELECT SUM(valor) as t FROM gastos WHERE mes=? AND semana=?",[mes,s])[0]?.t||0);
+    const cats=dq("SELECT categoria,SUM(valor) as tot FROM gastos WHERE mes=? GROUP BY categoria ORDER BY tot DESC",[mes]);
+    const rcats=dq("SELECT categoria,SUM(valor) as tot FROM receitas WHERE mes=? GROUP BY categoria ORDER BY tot DESC",[mes]);
+    const ant=mesAnterior(mes);
+    const antRec=dq("SELECT SUM(valor) as t FROM receitas WHERE mes=?",[ant])[0]?.t||0;
+    const antGas=dq("SELECT SUM(valor) as t FROM gastos WHERE mes=?",[ant])[0]?.t||0;
+    return{rec,gas,reserva,saldo,taxa,sems,cats,rcats,antRec,antGas};
+  },[mes,fixasTotal,rev]);
+  const limSem=(d.rec-d.reserva-fixasTotal)/4;
+  const varR=d.antRec>0?((d.rec-d.antRec)/d.antRec)*100:0;
+  const varG=d.antGas>0?((d.gas-d.antGas)/d.antGas)*100:0;
+  return(<div className="fade-in">
+    <MesNav mes={mes} onChange={v=>{onMesChange(v);setRev(r=>r+1);}}/>
+    {/* KPIs */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:9,marginBottom:13}}>
+      {[{l:"Receita",v:d.rec,c:C.green,ic:"💰"},{l:"Reserva",v:d.reserva,c:C.purple,ic:"🔒"},
+        {l:"Fixas",v:fixasTotal,c:C.yellow,ic:"📋"},{l:"Gastos",v:d.gas,c:C.red,ic:"💸"},
+        {l:"Saldo Final",v:d.saldo,c:d.saldo>=0?C.accent:C.red,ic:"💎"},
+        {l:"Poupança",v:null,c:d.taxa>=20?C.green:d.taxa>=10?C.yellow:C.red,ic:"📈",txt:d.taxa.toFixed(1)+"%"}
+      ].map(k=>(
+        <div key={k.l} style={{background:C.card,border:`1px solid ${k.c}33`,borderRadius:13,padding:"12px 8px",textAlign:"center"}}>
+          <div style={{fontSize:16,marginBottom:3}}>{k.ic}</div>
+          <div style={{color:C.muted,fontSize:9,marginBottom:3,textTransform:"uppercase"}}>{k.l}</div>
+          <div style={{color:k.c,fontWeight:800,fontSize:11}}>{k.txt||brl(k.v)}</div>
+        </div>
+      ))}
+    </div>
+    {/* Receita vs Gastos */}
+    {d.rec>0&&<Card>
+      <Lbl color={C.muted}>⚖ Receita × Gastos</Lbl>
+      {[{l:"💰 Receita",v:d.rec,pct:100,c:C.green},
+        {l:"📋 Fixas",v:fixasTotal,pct:d.rec>0?(fixasTotal/d.rec)*100:0,c:C.yellow},
+        {l:"💸 Gastos variáveis",v:d.gas,pct:d.rec>0?(d.gas/d.rec)*100:0,c:d.gas>d.rec-fixasTotal-d.reserva?C.red:C.orange},
+      ].map(b=>(
+        <div key={b.l} style={{marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+            <span style={{color:C.muted}}>{b.l}</span>
+            <span style={{color:b.c,fontWeight:700}}>{brl(b.v)} ({b.pct.toFixed(0)}%)</span>
+          </div>
+          <div style={{background:"#1e2d45",borderRadius:99,height:9,overflow:"hidden"}}>
+            <div style={{width:`${Math.min(b.pct,100)}%`,height:"100%",background:b.c,borderRadius:99,boxShadow:`0 0 8px ${b.c}55`}}/>
+          </div>
+        </div>
+      ))}
+      <div style={{background:"#0d1626",borderRadius:10,padding:"10px 14px",border:`1px solid ${d.saldo>=0?C.green:C.red}44`,marginTop:4}}>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
+          <span style={{color:C.muted}}>Resultado do mês</span>
+          <span style={{color:d.saldo>=0?C.green:C.red,fontWeight:800,fontSize:15}}>{brl(d.saldo)}</span>
+        </div>
+      </div>
+    </Card>}
+    {/* Comparativo mês anterior */}
+    {(d.antRec>0||d.antGas>0)&&<Card>
+      <Lbl color={C.muted}>🔄 vs {mesLabel(mesAnterior(mes))}</Lbl>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        {[{l:"Receita",v:d.rec,var:varR,c:C.green,pos:true},
+          {l:"Gastos variáveis",v:d.gas,var:varG,c:C.red,pos:false}].map(x=>(
+          <div key={x.l} style={{background:"#0d1626",borderRadius:10,padding:"12px"}}>
+            <div style={{color:C.muted,fontSize:11,marginBottom:5}}>{x.l}</div>
+            <div style={{color:x.c,fontWeight:800,fontSize:13}}>{brl(x.v)}</div>
+            {(d.antRec>0||d.antGas>0)&&<div style={{fontSize:11,marginTop:4,
+              color:(x.pos?x.var>=0:x.var<=0)?C.green:C.red}}>
+              {x.var>=0?"▲":"▼"} {Math.abs(x.var).toFixed(1)}% {(x.pos?x.var>=0:x.var<=0)?"🟢":"🔴"}
+            </div>}
+          </div>
+        ))}
+      </div>
+    </Card>}
+    {/* Semanas */}
+    {d.gas>0&&limSem>0&&<Card>
+      <Lbl color={C.muted}>🗓 Por Semana</Lbl>
+      {d.sems.map((v,i)=>(
+        <div key={i} style={{marginBottom:11}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:2}}>
+            <span style={{color:C.muted}}>Semana {i+1} <span style={{fontSize:10}}>dias {i*7+1}–{i===3?31:(i+1)*7}</span></span>
+            <span style={{color:statusCor(v,limSem),fontWeight:700}}>{brl(v)}</span>
+          </div>
+          <Bar value={v} max={limSem} color={statusCor(v,limSem)} thin/>
+          <div style={{fontSize:10,color:C.muted,marginTop:2}}>
+            {limSem>0?((v/limSem)*100).toFixed(0):0}% do limite · sobram {brl(Math.max(limSem-v,0))}
+          </div>
+        </div>
+      ))}
+    </Card>}
+    {/* Gastos por categoria */}
+    {d.cats.length>0&&<Card>
+      <Lbl color={C.muted}>🏷 Gastos por Categoria</Lbl>
+      {d.cats.map(r=>(
+        <div key={r.categoria} style={{marginBottom:11}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:2}}>
+            <span style={{fontWeight:600}}>{r.categoria}</span>
+            <span style={{color:C.orange,fontWeight:700}}>{brl(r.tot)}</span>
+          </div>
+          <Bar value={r.tot} max={d.cats[0].tot} color={C.orange} thin/>
+          <div style={{fontSize:10,color:C.muted,marginTop:2}}>{d.gas>0?((r.tot/d.gas)*100).toFixed(1):0}% dos gastos</div>
+        </div>
+      ))}
+    </Card>}
+    {/* Receitas por categoria */}
+    {d.rcats.length>0&&<Card>
+      <Lbl color={C.muted}>💰 Receitas por Categoria</Lbl>
+      {d.rcats.map(r=>(
+        <div key={r.categoria} style={{marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:2}}>
+            <span style={{fontWeight:600}}>{r.categoria}</span>
+            <span style={{color:C.green,fontWeight:700}}>{brl(r.tot)}</span>
+          </div>
+          <Bar value={r.tot} max={d.rec} color={C.green} thin/>
+          <div style={{fontSize:10,color:C.muted,marginTop:2}}>{d.rec>0?((r.tot/d.rec)*100).toFixed(1):0}% da receita</div>
+        </div>
+      ))}
+    </Card>}
+    {d.rec===0&&d.gas===0&&<Card style={{textAlign:"center",padding:"32px 18px"}}>
+      <div style={{fontSize:36,marginBottom:12}}>📅</div>
+      <div style={{color:C.muted,fontSize:14}}>Nenhum dado em {mesLabel(mes)}</div>
+      <div style={{color:C.muted,fontSize:12,marginTop:8}}>Cadastre receitas e gastos para ver o controle mensal</div>
+    </Card>}
+  </div>);
+}
+
+// ════════════════════════════════════════════
+// SEÇÃO: CONTROLE ANUAL
+// ════════════════════════════════════════════
+function SecaoAnual({fixasTotal}){
+  const anoHoje=new Date().getFullYear();
+  const [ano,setAno]=useState(anoHoje);
+  const [det,setDet]=useState(null);
+
+  const da=useMemo(()=>{
+    const meses=Array.from({length:12},(_,i)=>{
+      const ym=`${ano}-${String(i+1).padStart(2,"0")}`;
+      const rec=dq("SELECT SUM(valor) as t FROM receitas WHERE mes=?",[ym])[0]?.t||0;
+      const gas=dq("SELECT SUM(valor) as t FROM gastos WHERE mes=?",[ym])[0]?.t||0;
+      const reserva=rec*.125;
+      const saldo=rec-reserva-fixasTotal-gas;
+      return{ym,mes:i,rec,gas,reserva,saldo,ok:rec>0||gas>0};
+    });
+    const totRec=meses.reduce((s,m)=>s+m.rec,0);
+    const totGas=meses.reduce((s,m)=>s+m.gas,0);
+    const totSaldo=totRec-(totRec*.125)-(fixasTotal*12)-totGas;
+    const com=meses.filter(m=>m.ok);
+    const melhor=com.length?com.reduce((a,b)=>b.saldo>a.saldo?b:a,com[0]):null;
+    const pior  =com.length?com.reduce((a,b)=>b.saldo<a.saldo?b:a,com[0]):null;
+    const maxRec=Math.max(...meses.map(m=>m.rec),1);
+    const taxa  =totRec>0?((totRec-totGas-(fixasTotal*12))/totRec)*100:0;
+    return{meses,totRec,totGas,totSaldo,melhor,pior,maxRec,taxa,com};
+  },[ano,fixasTotal]);
+
+  const detalhe=det!==null?da.meses[det]:null;
+
+  return(<div className="fade-in">
+    {/* Navegador de ano */}
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+      background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",marginBottom:14}}>
+      <button onClick={()=>setAno(a=>a-1)} style={{background:"none",border:"none",color:C.accent,cursor:"pointer",fontSize:24,padding:"0 10px",lineHeight:1}}>‹</button>
+      <span style={{fontWeight:900,fontSize:20,color:C.text}}>{ano}</span>
+      <button onClick={()=>setAno(a=>a+1)} style={{background:"none",border:"none",color:C.accent,cursor:"pointer",fontSize:24,padding:"0 10px",lineHeight:1}}>›</button>
+    </div>
+
+    {da.com.length>0&&<>
+      {/* KPIs anuais */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:13}}>
+        {[{l:"Receita Total",v:da.totRec,c:C.green,ic:"💰"},
+          {l:"Gastos Variáveis",v:da.totGas,c:C.red,ic:"💸"},
+          {l:"Fixas (12 meses)",v:fixasTotal*12,c:C.yellow,ic:"📋"},
+          {l:"Saldo Anual",v:da.totSaldo,c:da.totSaldo>=0?C.accent:C.red,ic:"💎"},
+        ].map(k=>(
+          <div key={k.l} style={{background:C.card,border:`1px solid ${k.c}33`,borderRadius:13,padding:"14px"}}>
+            <div style={{fontSize:20,marginBottom:4}}>{k.ic}</div>
+            <div style={{color:C.muted,fontSize:10,marginBottom:4,textTransform:"uppercase"}}>{k.l}</div>
+            <div style={{color:k.c,fontWeight:800,fontSize:15}}>{brl(k.v)}</div>
+          </div>
+        ))}
+      </div>
+      {/* Taxa de poupança anual */}
+      <Card style={{border:`1px solid ${da.taxa>=20?C.green:da.taxa>=10?C.yellow:C.red}44`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <span style={{fontSize:13,fontWeight:700}}>📈 Taxa de Poupança Anual</span>
+          <span style={{color:da.taxa>=20?C.green:da.taxa>=10?C.yellow:C.red,fontWeight:900,fontSize:22}}>
+            {da.taxa.toFixed(1)}%
+          </span>
+        </div>
+        <Bar value={Math.max(da.taxa,0)} max={100} color={da.taxa>=20?C.green:da.taxa>=10?C.yellow:C.red}/>
+        <div style={{fontSize:11,color:C.muted,marginTop:6}}>
+          {da.taxa>=20?"🟢 Excelente! Poupança saudável.":da.taxa>=10?"🟡 Razoável. Meta: chegar a 20%.":"🔴 Atenção: poupança abaixo do ideal."}
+        </div>
+      </Card>
+      {/* Melhor / Pior */}
+      {(da.melhor||da.pior)&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:13}}>
+        {da.melhor&&<div style={{background:C.card,border:`1px solid ${C.green}44`,borderRadius:14,padding:"14px",textAlign:"center"}}>
+          <div style={{fontSize:22,marginBottom:4}}>🏆</div>
+          <div style={{color:C.muted,fontSize:10,marginBottom:4}}>MELHOR MÊS</div>
+          <div style={{color:C.green,fontWeight:800,fontSize:14}}>{MESES[da.melhor.mes].slice(0,3)}</div>
+          <div style={{color:C.green,fontSize:12,marginTop:2}}>{brl(da.melhor.saldo)}</div>
+        </div>}
+        {da.pior&&<div style={{background:C.card,border:`1px solid ${C.red}44`,borderRadius:14,padding:"14px",textAlign:"center"}}>
+          <div style={{fontSize:22,marginBottom:4}}>⚠️</div>
+          <div style={{color:C.muted,fontSize:10,marginBottom:4}}>PIOR MÊS</div>
+          <div style={{color:C.red,fontWeight:800,fontSize:14}}>{MESES[da.pior.mes].slice(0,3)}</div>
+          <div style={{color:C.red,fontSize:12,marginTop:2}}>{brl(da.pior.saldo)}</div>
+        </div>}
+      </div>}
+    </>}
+
+    {/* Grid 12 meses */}
+    <Card>
+      <Lbl color={C.muted}>📆 Todos os Meses — {ano}</Lbl>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        {da.meses.map((m,i)=>{
+          const cor=!m.ok?C.muted:m.saldo>=0?C.green:C.red;
+          const isAtual=m.ym===mesHoje();
+          return(
+            <div key={i} onClick={()=>m.ok&&setDet(det===i?null:i)}
+              style={{background:det===i?"#0d2040":"#0d1626",borderRadius:12,padding:"12px",
+                border:`1.5px solid ${det===i?C.accent:isAtual?C.accent+"77":cor+"44"}`,
+                cursor:m.ok?"pointer":"default",opacity:m.ok?1:0.38,transition:"all .2s"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+                <span style={{fontWeight:700,fontSize:12,color:isAtual?C.accent:C.text}}>
+                  {MESES[i].slice(0,3)}
+                  {isAtual&&<span style={{marginLeft:4,fontSize:9,color:C.accent,
+                    border:`1px solid ${C.accent}`,borderRadius:3,padding:"0 3px"}}>NOW</span>}
+                </span>
+                <span style={{color:cor,fontWeight:700,fontSize:10}}>{m.ok?brl(m.saldo):"—"}</span>
+              </div>
+              {m.ok&&<>
+                <div style={{fontSize:10,color:C.green,marginBottom:1}}>▲ {brl(m.rec)}</div>
+                <div style={{fontSize:10,color:C.red,marginBottom:5}}>▼ {brl(m.gas+fixasTotal)}</div>
+                <div style={{background:"#1e2d45",borderRadius:99,height:4,overflow:"hidden"}}>
+                  <div style={{width:`${Math.min((m.gas/Math.max(m.rec,1))*100,100)}%`,
+                    height:"100%",background:m.saldo>=0?C.green:C.red,borderRadius:99}}/>
+                </div>
+              </>}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+
+    {/* Detalhe mês */}
+    {detalhe&&<Card style={{border:`1px solid ${C.accent}44`}} className="fade-in">
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <Lbl color={C.accent} style={{margin:0}}>🔍 {MESES[detalhe.mes]} {ano}</Lbl>
+        <button onClick={()=>setDet(null)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:20}}>✕</button>
+      </div>
+      {[{l:"Receita",v:detalhe.rec,c:C.green},{l:"Reserva (12.5%)",v:detalhe.reserva,c:C.purple},
+        {l:"Fixas",v:fixasTotal,c:C.yellow},{l:"Gastos variáveis",v:detalhe.gas,c:C.red},
+        {l:"Saldo do mês",v:detalhe.saldo,c:detalhe.saldo>=0?C.accent:C.red}
+      ].map(r=>(
+        <div key={r.l} style={{display:"flex",justifyContent:"space-between",
+          padding:"9px 0",borderBottom:`1px solid ${C.border}`,fontSize:13}}>
+          <span style={{color:C.muted}}>{r.l}</span>
+          <span style={{color:r.c,fontWeight:700}}>{brl(r.v)}</span>
+        </div>
+      ))}
+      <div style={{marginTop:14}}>
+        {[{l:"Receita",v:detalhe.rec,c:C.green},{l:"Fixas+Gastos",v:fixasTotal+detalhe.gas,c:fixasTotal+detalhe.gas>detalhe.rec?C.red:C.orange}].map(b=>(
+          <div key={b.l} style={{marginBottom:8}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
+              <span style={{color:C.muted}}>{b.l}</span><span style={{color:b.c}}>{brl(b.v)}</span>
+            </div>
+            <div style={{background:"#1e2d45",borderRadius:99,height:8,overflow:"hidden"}}>
+              <div style={{width:`${Math.min((b.v/Math.max(detalhe.rec,1))*100,100)}%`,height:"100%",background:b.c,borderRadius:99}}/>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>}
+
+    {/* Gráfico de barras anual */}
+    {da.com.length>0&&<Card>
+      <Lbl color={C.muted}>📊 Evolução — {ano}</Lbl>
+      <div style={{display:"flex",alignItems:"flex-end",gap:3,height:100,marginBottom:6}}>
+        {da.meses.map((m,i)=>{
+          const hR=m.rec>0?(m.rec/da.maxRec)*90:0;
+          const hG=m.gas>0?(m.gas/da.maxRec)*90:0;
+          return(
+            <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:1}}>
+              <div style={{width:"100%",display:"flex",gap:1,alignItems:"flex-end",height:90}}>
+                <div style={{flex:1,height:`${hR}px`,background:C.green,borderRadius:"3px 3px 0 0",minHeight:m.rec>0?3:0,boxShadow:m.rec>0?`0 0 5px ${C.green}66`:"none"}}/>
+                <div style={{flex:1,height:`${hG}px`,background:C.red,borderRadius:"3px 3px 0 0",minHeight:m.gas>0?3:0,boxShadow:m.gas>0?`0 0 5px ${C.red}66`:"none"}}/>
+              </div>
+              <div style={{fontSize:7,color:C.muted,textAlign:"center"}}>{MESES[i].slice(0,1)}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{display:"flex",gap:16,justifyContent:"center",fontSize:11,color:C.muted}}>
+        <span><span style={{color:C.green}}>▌</span> Receita</span>
+        <span><span style={{color:C.red}}>▌</span> Gastos var.</span>
+      </div>
+    </Card>}
+
+    {da.com.length===0&&<Card style={{textAlign:"center",padding:"32px 18px"}}>
+      <div style={{fontSize:36,marginBottom:12}}>📆</div>
+      <div style={{color:C.muted,fontSize:14}}>Nenhum dado em {ano}</div>
+      <div style={{color:C.muted,fontSize:12,marginTop:8}}>Cadastre receitas e gastos para ver o controle anual</div>
+    </Card>}
+  </div>);
+}
+
+// ════════════════════════════════════════════
+// APP RAIZ
+// ════════════════════════════════════════════
+function FinIAApp() {
+  const [tab, setTab]         = useState("mensal");
+  const [mesRec, setMesRec]     = useState(mesHoje());
+  const [mesGas, setMesGas]     = useState(mesHoje());
+  const [mesAna, setMesAna]     = useState(mesHoje());
+  const [mesMensal,setMesMensal]= useState(mesHoje());
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const fixas = useFixas();
+
+  // receita do mês de gastos (para calcular limites)
+  const receitaMesGastos = useMemo(()=>{
+    const rows = dq("SELECT SUM(valor) as tot FROM receitas WHERE mes=?",[mesGas]);
+    return rows[0]?.tot||0;
+  },[mesGas, tab]);
+
+  const receitaMesAna = useMemo(()=>{
+    const rows = dq("SELECT SUM(valor) as tot FROM receitas WHERE mes=?",[mesAna]);
+    return rows[0]?.tot||0;
+  },[mesAna, tab]);
+
+  const gastosHoje = useMemo(()=>{
+    const rows = dq("SELECT SUM(valor) as tot FROM gastos WHERE data=?",[hoje()]);
+    return rows[0]?.tot||0;
+  },[tab]);
+
+  const recHoje = useMemo(()=>{
+    const rows = dq("SELECT SUM(valor) as tot FROM receitas WHERE mes=?",[mesHoje()]);
+    return rows[0]?.tot||0;
+  },[tab]);
+
+  const reservaHoje = recHoje*.125;
+  const saldoHoje = recHoje-reservaHoje-fixas.total;
+  const limDiaHoje = saldoHoje/28;
+
+  const TABS = [
+    {id:"mensal",   l:"📅", nome:"Mensal"},
+    {id:"anual",    l:"📆", nome:"Anual"},
+    {id:"receitas", l:"💰", nome:"Receitas"},
+    {id:"gastos",   l:"💸", nome:"Gastos"},
+    {id:"analise",  l:"📊", nome:"Análise"},
+    {id:"ia",       l:"🤖", nome:"IA"},
+  ];
+
+  return(
+    <div style={{minHeight:"100vh",background:C.bg,color:C.text,maxWidth:500,margin:"0 auto",paddingBottom:80}}>
+
+      {/* HEADER */}
+      <div style={{padding:"14px 18px 0",borderBottom:`1px solid ${C.border}`,
+        background:"linear-gradient(180deg,#0d1626,#0a0f1e)",position:"sticky",top:0,zIndex:100}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div>
+            <div style={{fontSize:18,fontWeight:900,
+              background:`linear-gradient(90deg,${C.accent},${C.purple})`,
+              WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>💠 FinIA</div>
+            <div style={{fontSize:11,marginTop:1}}>
+              Hoje: <span style={{color:gastosHoje>limDiaHoje?C.red:C.green,fontWeight:700}}>{brl(gastosHoje)}</span>
+              <span style={{color:C.muted}}> / {brl(limDiaHoje)}</span>
+              {gastosHoje>limDiaHoje&&<span style={{color:C.red,marginLeft:5,fontSize:10}}>⚠</span>}
+            </div>
+          </div>
+          <button onClick={()=>setMenuOpen(true)}
+            style={{background:"none",border:`1px solid ${C.border}`,color:C.muted,
+              borderRadius:10,padding:"7px 11px",cursor:"pointer",fontSize:13}}>⚙</button>
+        </div>
+        <div style={{display:"flex",overflowX:"auto",WebkitOverflowScrolling:"touch",
+          scrollbarWidth:"none",msOverflowStyle:"none",gap:0}}>
+          {TABS.map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{
+              flexShrink:0,
+              background:tab===t.id?`${C.accent}22`:"none",
+              border:"none",
+              borderBottom:`2px solid ${tab===t.id?C.accent:"transparent"}`,
+              color:tab===t.id?C.accent:C.muted,
+              padding:"8px 14px",cursor:"pointer",fontSize:10,fontWeight:700,
+              transition:"all .2s",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+              <span style={{fontSize:15}}>{t.l}</span>
+              <span>{t.nome}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{padding:"16px 18px"}}>
+        {tab==="mensal"  &&<SecaoMensal  mes={mesMensal} onMesChange={setMesMensal} fixasTotal={fixas.total}/>}
+        {tab==="anual"   &&<SecaoAnual   fixasTotal={fixas.total}/>}
+        {tab==="receitas"&&<SecaoReceitas mes={mesRec} onMesChange={setMesRec} fixas={fixas} limSem={0} limDia={0}/>}
+        {tab==="gastos"  &&<SecaoGastos  mes={mesGas} onMesChange={setMesGas} fixasTotal={fixas.total} receitaTotal={receitaMesGastos}/>}
+        {tab==="analise" &&<SecaoAnalise mes={mesAna} onMesChange={setMesAna} fixasTotal={fixas.total} receitaTotal={receitaMesAna}/>}
+        {tab==="ia"      &&<SecaoIA      mes={mesGas} fixasTotal={fixas.total} receitaTotal={receitaMesGastos}/>}
+      </div>
+
+      {/* Menu configurações */}
+      {menuOpen&&(
+        <Modal title="⚙ Configurações & Banco" onClose={()=>setMenuOpen(false)}>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{background:"#0d1626",borderRadius:12,padding:"14px"}}>
+              <div style={{color:C.accent,fontWeight:700,fontSize:12,marginBottom:8}}>🗄 Banco de Dados SQLite</div>
+              <div style={{color:C.muted,fontSize:12,lineHeight:1.6}}>
+                Todos os dados são armazenados em SQLite local no navegador. Exporte para fazer backup ou importe para restaurar.
+              </div>
+            </div>
+            <button onClick={()=>{exportarDB();setMenuOpen(false);}}
+              style={{background:`${C.accent}18`,border:`1.5px solid ${C.accent}`,color:C.accent,
+                borderRadius:10,padding:"12px",cursor:"pointer",fontWeight:700,fontSize:14}}>
+              📥 Exportar banco (.db)
+            </button>
+            <div>
+              <div style={{color:C.muted,fontSize:12,marginBottom:8}}>📤 Importar banco (.db)</div>
+              <input type="file" accept=".db" onChange={e=>e.target.files[0]&&importarDB(e.target.files[0])}
+                style={{color:C.text,fontSize:13,width:"100%"}}/>
+            </div>
+            <div style={{borderTop:`1px solid ${C.border}`,paddingTop:12}}>
+              <button onClick={()=>{
+                if(confirm("⚠ APAGAR TODOS OS DADOS?\nEsta ação não pode ser desfeita.")) {
+                  localStorage.removeItem('finia_db');
+                  window.location.reload();
+                }
+              }} style={{background:`${C.red}18`,border:`1.5px solid ${C.red}`,color:C.red,
+                borderRadius:10,padding:"12px",cursor:"pointer",fontWeight:700,fontSize:14,width:"100%"}}>
+                🗑 Apagar todos os dados
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+window.FinIAApp = FinIAApp;
+</script>
+</body>
+</html>

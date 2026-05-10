@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FinCalc — Simulador de Financiamentos</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg:       #06080c;
+  --s1:       #0b0f16;
+  --s2:       #111820;
+  --s3:       #182030;
+  --bd:       #1c2a3a;
+  --bd2:      #253545;
+  --tx:       #cde0f0;
+  --tx2:      #7a9ab8;
+  --tx3:      #3a5570;
+  --ac:       #14b8ff;
+  --acd:      #0e86bf;
+  --gr:       #10d98a;
+  --rd:       #ff4f6a;
+  --am:       #ffb830;
+  --pu:       #a78bfa;
+  --sans:     'Space Grotesk', sans-serif;
+  --mono:     'JetBrains Mono', monospace;
+  --r:        10px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{font-family:var(--sans);background:var(--bg);color:var(--tx);font-size:14px;min-height:100vh;-webkit-font-smoothing:antialiased;}
+::selection{background:var(--ac)33;}
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-track{background:var(--s1);}
+::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:3px;}
+::-webkit-scrollbar-thumb:hover{background:var(--acd);}
+
+/* ─── APP SHELL */
+.app{display:flex;flex-direction:column;min-height:100vh;}
+
+/* ─── TOPBAR */
+.topbar{
+  position:sticky;top:0;z-index:200;height:52px;
+  background:var(--bg)f0;backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--bd);
+  display:flex;align-items:center;padding:0 24px;gap:16px;
+}
+.brand{display:flex;align-items:center;gap:10px;}
+.bmark{
+  width:32px;height:32px;border-radius:8px;
+  background:linear-gradient(135deg,var(--ac)22,var(--ac)50);
+  border:1px solid var(--ac)50;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:14px;font-weight:600;color:var(--ac);
+}
+.bname{font-family:var(--mono);font-weight:600;font-size:14px;color:#e8f4ff;letter-spacing:.06em;}
+.btag{font-size:10px;color:var(--tx3);letter-spacing:.12em;}
+.topbar-date{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--tx3);}
+
+/* ─── LAYOUT */
+.layout{display:grid;grid-template-columns:286px 1fr;flex:1;}
+
+/* ─── SIDEBAR */
+.sidebar{
+  background:var(--s1);border-right:1px solid var(--bd);
+  position:sticky;top:52px;height:calc(100vh - 52px);
+  overflow-y:auto;padding:18px 15px;
+  display:flex;flex-direction:column;gap:20px;
+}
+.stitle{
+  font-family:var(--mono);font-size:9px;
+  text-transform:uppercase;letter-spacing:.16em;color:var(--tx3);
+  padding-bottom:8px;border-bottom:1px solid var(--bd);
+}
+/* tipo */
+.tgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px;}
+.tbtn{
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:9px 4px;border-radius:8px;cursor:pointer;
+  border:1px solid var(--bd);background:transparent;
+  color:var(--tx3);font-family:var(--mono);font-size:10px;
+  transition:all .18s;line-height:1;
+}
+.tbtn .em{font-size:20px;line-height:1.3;}
+.tbtn:hover{border-color:var(--bd2);color:var(--tx2);}
+.tbtn.on{border-color:var(--ac)55;background:var(--ac)0c;color:var(--ac);}
+
+/* field */
+.field{display:flex;flex-direction:column;gap:5px;}
+.flabel{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.13em;color:var(--tx3);}
+.fhint{font-family:var(--mono);font-size:10px;color:var(--tx3);}
+.fhint.g{color:var(--gr)99;}
+
+.iwrap{position:relative;display:flex;align-items:center;}
+.ipre,.isuf{position:absolute;font-family:var(--mono);font-size:11px;color:var(--tx3);pointer-events:none;top:50%;transform:translateY(-50%);}
+.ipre{left:10px;}.isuf{right:10px;}
+
+input[type=number],input[type=month]{
+  width:100%;background:var(--s2);border:1px solid var(--bd);
+  border-radius:7px;padding:8px 11px;color:var(--tx);
+  font-family:var(--mono);font-size:12px;
+  outline:none;transition:border .15s;-moz-appearance:textfield;
+}
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
+input:focus{border-color:var(--ac)55;}
+.hpre input{padding-left:26px;}
+.hsuf input{padding-right:26px;}
+
+/* toggle */
+.tog{display:flex;border:1px solid var(--bd);border-radius:7px;overflow:hidden;}
+.togbtn{
+  flex:1;padding:7px;text-align:center;cursor:pointer;
+  font-family:var(--mono);font-size:10px;color:var(--tx3);
+  background:transparent;border:none;transition:all .15s;
+}
+.togbtn.on{background:var(--ac)16;color:var(--ac);}
+
+/* radio */
+.rlist{display:flex;flex-direction:column;gap:6px;margin-top:10px;}
+.radio{
+  display:flex;align-items:flex-start;gap:9px;
+  padding:10px 11px;border:1px solid var(--bd);
+  border-radius:8px;background:transparent;cursor:pointer;transition:all .15s;
+}
+.radio:hover{border-color:var(--bd2);}
+.radio.on{border-color:var(--ac)50;background:var(--ac)09;}
+.rcircle{
+  width:14px;height:14px;border-radius:50%;border:2px solid var(--bd);
+  flex-shrink:0;margin-top:1px;
+  display:flex;align-items:center;justify-content:center;transition:.15s;
+}
+.radio.on .rcircle{border-color:var(--ac);}
+.rdot{width:6px;height:6px;border-radius:50%;background:var(--ac);display:none;}
+.radio.on .rdot{display:block;}
+.rtxt{display:flex;flex-direction:column;gap:2px;}
+.rname{font-family:var(--mono);font-size:11px;color:var(--tx);}
+.radio.on .rname{color:var(--ac);}
+.rdesc{font-size:10px;color:var(--tx3);}
+
+/* ─── MAIN */
+.main{padding:20px 22px;display:flex;flex-direction:column;gap:16px;}
+
+/* KPIs */
+.kpirow{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+.kpi{
+  background:var(--s1);border:1px solid var(--bd);
+  border-radius:var(--r);padding:14px 16px;
+  position:relative;overflow:hidden;
+}
+.kpi::after{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse at top left,var(--kc)12,transparent 65%);
+  pointer-events:none;
+}
+.klbl{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.14em;color:var(--tx3);margin-bottom:8px;}
+.kval{font-family:var(--mono);font-size:17px;font-weight:600;color:var(--kc);line-height:1;}
+.ksub{font-family:var(--mono);font-size:9px;color:var(--tx3);margin-top:6px;}
+.kbar{height:2px;background:var(--bd);border-radius:1px;margin-top:10px;overflow:hidden;}
+.kbarfill{height:100%;border-radius:1px;background:var(--kc);opacity:.6;transition:width .6s;}
+
+/* COMP */
+.comp{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r);padding:16px 18px;}
+.comphd{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.comptitle{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.14em;color:var(--tx3);}
+.compleg{display:flex;gap:14px;}
+.leg{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--tx2);}
+.legpip{width:10px;height:3px;border-radius:2px;}
+.compbar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--s3);}
+.compseg{height:100%;transition:width .7s cubic-bezier(.4,0,.2,1);}
+.metagrid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:12px;}
+.meta{background:var(--s2);border-radius:7px;padding:9px 11px;}
+.metalbl{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--tx3);margin-bottom:4px;}
+.metaval{font-family:var(--mono);font-size:11px;color:var(--tx);}
+
+/* CHART */
+.chartcard{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r);padding:14px 18px 10px;}
+.charthd{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.charttitle{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.14em;color:var(--tx3);}
+.chartleg{display:flex;gap:12px;}
+#chart{width:100%;height:130px;display:block;}
+
+/* TABS */
+.tabs{display:flex;align-items:center;gap:4px;}
+.tabbt{
+  padding:7px 16px;border-radius:7px;cursor:pointer;
+  font-family:var(--mono);font-size:10px;letter-spacing:.04em;
+  border:1px solid transparent;background:transparent;
+  color:var(--tx3);transition:all .15s;
+}
+.tabbt:hover{color:var(--tx2);}
+.tabbt.on{background:var(--ac)14;border-color:var(--ac)40;color:var(--ac);}
+.tabinfo{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--tx3);}
+
+/* ─── TABLE */
+.tcard{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;}
+.tscroll{max-height:540px;overflow-y:auto;overflow-x:auto;}
+table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;}
+thead{position:sticky;top:0;z-index:5;}
+thead tr{background:var(--s2);}
+th{
+  padding:10px 14px;font-family:var(--mono);font-size:9px;font-weight:500;
+  text-transform:uppercase;letter-spacing:.13em;color:var(--tx3);
+  text-align:right;white-space:nowrap;
+  border-bottom:2px solid var(--bd);user-select:none;
+}
+th:first-child{text-align:left;}
+tbody tr{border-bottom:1px solid var(--s3);transition:background .1s;}
+tbody tr:last-child{border-bottom:none;}
+tbody tr:hover td{background:var(--ac)07;}
+tbody tr.stripe td{background:var(--s2)80;}
+tbody tr.hl td{background:var(--am)08;}
+tbody tr.hl td:first-child{border-left:2px solid var(--am);}
+tbody tr.past td{opacity:.38;}
+td{padding:9px 14px;text-align:right;white-space:nowrap;vertical-align:middle;}
+td:first-child{text-align:left;}
+
+/* cell colors */
+.cn{color:var(--tx3);}
+.cdt{color:#6eb0d8;}
+.cv{color:var(--tx);font-weight:500;}
+.cam{color:var(--gr);}
+.cju{color:var(--rd);}
+.csd{color:var(--tx2);}
+.csd.z{color:var(--tx3);}
+
+/* inline progress */
+.ibar{display:inline-flex;align-items:center;gap:6px;width:100%;justify-content:flex-end;}
+.itrack{width:48px;height:3px;background:var(--s3);border-radius:2px;flex-shrink:0;}
+.ifill{height:100%;border-radius:2px;}
+.ipct{font-size:9px;color:var(--tx3);min-width:30px;text-align:right;}
+
+/* badge */
+.bdg{display:inline-block;font-size:9px;padding:2px 6px;border-radius:4px;font-family:var(--mono);margin-left:5px;vertical-align:middle;}
+.bac{background:var(--ac)18;color:var(--ac);border:1px solid var(--ac)35;}
+.bam{background:var(--am)18;color:var(--am);border:1px solid var(--am)35;}
+.bgr{background:var(--gr)18;color:var(--gr);border:1px solid var(--gr)35;}
+
+tfoot tr td{padding:11px 14px;font-weight:600;font-size:12px;background:var(--s2);border-top:2px solid var(--bd);}
+
+/* animations */
+@keyframes up{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}}
+.ani{animation:up .35s ease both;}
+.d1{animation-delay:.05s;}.d2{animation-delay:.1s;}.d3{animation-delay:.15s;}.d4{animation-delay:.2s;}
+
+@media(max-width:900px){
+  .layout{grid-template-columns:1fr;}
+  .sidebar{position:static;height:auto;}
+  .kpirow{grid-template-columns:1fr 1fr;}
+  .metagrid{grid-template-columns:repeat(3,1fr);}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- TOPBAR -->
+<header class="topbar">
+  <div class="brand">
+    <div class="bmark">₣</div>
+    <div>
+      <div class="bname">FinCalc</div>
+      <div class="btag">Simulador de Financiamentos &amp; Consórcio</div>
+    </div>
+  </div>
+  <div class="topbar-date" id="hdate"></div>
+</header>
+
+<div class="layout">
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+
+  <div>
+    <div class="stitle">Tipo de Operação</div>
+    <div class="tgrid">
+      <button class="tbtn on" data-tipo="imovel"   onclick="setTipo(this)"><span class="em">🏠</span>Imóvel</button>
+      <button class="tbtn"    data-tipo="veiculo"  onclick="setTipo(this)"><span class="em">🚗</span>Veículo</button>
+      <button class="tbtn"    data-tipo="pessoal"  onclick="setTipo(this)"><span class="em">💳</span>Pessoal</button>
+      <button class="tbtn"    data-tipo="consorcio" onclick="setTipo(this)"><span class="em">🤝</span>Consórcio</button>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:12px;">
+    <div class="stitle">Valores</div>
+
+    <div class="field">
+      <div class="flabel">Valor do Bem / Crédito</div>
+      <div class="iwrap hpre">
+        <span class="ipre">R$</span>
+        <input type="number" id="valor" value="500000" min="0" step="1000" oninput="calc()">
+      </div>
+    </div>
+
+    <div class="field" id="entrada-field">
+      <div class="flabel">Entrada / Sinal</div>
+      <div class="iwrap hpre">
+        <span class="ipre">R$</span>
+        <input type="number" id="entrada" value="100000" min="0" step="1000" oninput="calc()">
+      </div>
+      <div class="fhint g" id="hint-pv">—</div>
+    </div>
+
+    <div class="field">
+      <div class="flabel">Número de Parcelas</div>
+      <input type="number" id="parcelas" value="360" min="1" max="600" oninput="calc()">
+      <div class="fhint" id="hint-anos">30,0 anos</div>
+    </div>
+
+    <div class="field">
+      <div class="flabel">Início dos Pagamentos</div>
+      <input type="month" id="dataInicio" oninput="calc()">
+    </div>
+  </div>
+
+  <!-- JUROS -->
+  <div id="bloco-juros">
+    <div class="stitle">Taxa de Juros</div>
+    <div class="tog" style="margin:10px 0 12px;">
+      <button class="togbtn on" id="tog-m" onclick="setTaxaMode('m')">Mensal</button>
+      <button class="togbtn"    id="tog-a" onclick="setTaxaMode('a')">Anual</button>
+    </div>
+    <div class="field" id="bloco-taxa-m">
+      <div class="flabel">Taxa Mensal (%)</div>
+      <div class="iwrap hsuf">
+        <input type="number" id="taxaM" value="0.85" step="0.01" min="0" oninput="onMChange()">
+        <span class="isuf">%</span>
+      </div>
+      <div class="fhint" id="hint-am">≈ 10.70 % a.a.</div>
+    </div>
+    <div class="field" id="bloco-taxa-a" style="display:none;">
+      <div class="flabel">Taxa Anual (%)</div>
+      <div class="iwrap hsuf">
+        <input type="number" id="taxaA" value="10.70" step="0.1" min="0" oninput="onAChange()">
+        <span class="isuf">%</span>
+      </div>
+      <div class="fhint" id="hint-ma">≈ 0.8500 % a.m.</div>
+    </div>
+  </div>
+
+  <!-- CONSÓRCIO -->
+  <div id="bloco-consorcio" style="display:none;">
+    <div class="stitle">Taxa Administrativa</div>
+    <div class="field" style="margin-top:10px;">
+      <div class="flabel">Taxa Total sobre o Crédito (%)</div>
+      <div class="iwrap hsuf">
+        <input type="number" id="taxaAdm" value="18" step="0.5" min="0" oninput="calc()">
+        <span class="isuf">%</span>
+      </div>
+      <div class="fhint" id="hint-adm">Diluída em 360 parcelas</div>
+    </div>
+  </div>
+
+  <!-- SISTEMA -->
+  <div id="bloco-sistema">
+    <div class="stitle">Sistema de Amortização</div>
+    <div class="rlist">
+      <div class="radio on" id="r-PRICE" onclick="setSistema('PRICE')">
+        <div class="rcircle"><div class="rdot"></div></div>
+        <div class="rtxt"><div class="rname">PRICE</div><div class="rdesc">Parcelas fixas · amortização crescente</div></div>
+      </div>
+      <div class="radio" id="r-SAC" onclick="setSistema('SAC')">
+        <div class="rcircle"><div class="rdot"></div></div>
+        <div class="rtxt"><div class="rname">SAC</div><div class="rdesc">Amortização fixa · parcelas decrescentes</div></div>
+      </div>
+    </div>
+  </div>
+
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+
+  <!-- KPIs -->
+  <div class="kpirow ani">
+    <div class="kpi" style="--kc:var(--ac)">
+      <div class="klbl">1ª Parcela</div>
+      <div class="kval" id="kpi-p1">—</div>
+      <div class="ksub" id="kpi-p1s"></div>
+      <div class="kbar"><div class="kbarfill" id="kpi-p1b" style="width:100%"></div></div>
+    </div>
+    <div class="kpi" style="--kc:var(--am)">
+      <div class="klbl">Última Parcela</div>
+      <div class="kval" id="kpi-pn">—</div>
+      <div class="ksub" id="kpi-pns"></div>
+      <div class="kbar"><div class="kbarfill" id="kpi-pnb" style="width:60%"></div></div>
+    </div>
+    <div class="kpi" style="--kc:var(--gr)">
+      <div class="klbl">Total Amortizado</div>
+      <div class="kval" id="kpi-am">—</div>
+      <div class="ksub" id="kpi-ams"></div>
+      <div class="kbar"><div class="kbarfill" id="kpi-amb" style="width:70%"></div></div>
+    </div>
+    <div class="kpi" style="--kc:var(--rd)">
+      <div class="klbl">Total em Juros</div>
+      <div class="kval" id="kpi-ju">—</div>
+      <div class="ksub" id="kpi-jus"></div>
+      <div class="kbar"><div class="kbarfill" id="kpi-jub" style="width:30%"></div></div>
+    </div>
+  </div>
+
+  <!-- COMPOSIÇÃO -->
+  <div class="comp ani d1">
+    <div class="comphd">
+      <span class="comptitle">Composição Total do Financiamento</span>
+      <div class="compleg">
+        <div class="leg"><div class="legpip" style="background:var(--gr)"></div><span id="leg-am">—% Principal</span></div>
+        <div class="leg"><div class="legpip" style="background:var(--rd)"></div><span id="leg-ju">—% Juros</span></div>
+      </div>
+    </div>
+    <div class="compbar">
+      <div class="compseg" id="seg-am" style="background:var(--gr);width:70%"></div>
+      <div class="compseg" id="seg-ju" style="background:var(--rd);width:30%"></div>
+    </div>
+    <div class="metagrid">
+      <div class="meta"><div class="metalbl">Total Pago</div><div class="metaval" id="m-total">—</div></div>
+      <div class="meta"><div class="metalbl">Prazo</div><div class="metaval" id="m-prazo">—</div></div>
+      <div class="meta"><div class="metalbl">Taxa Mensal</div><div class="metaval" id="m-tm">—</div></div>
+      <div class="meta"><div class="metalbl">Taxa Anual</div><div class="metaval" id="m-ta">—</div></div>
+      <div class="meta"><div class="metalbl">Término</div><div class="metaval" id="m-fim">—</div></div>
+    </div>
+  </div>
+
+  <!-- GRÁFICO -->
+  <div class="chartcard ani d2">
+    <div class="charthd">
+      <span class="charttitle">Evolução do Saldo Devedor</span>
+      <div class="chartleg">
+        <div class="leg"><div class="legpip" style="background:var(--ac)"></div><span>Saldo Devedor</span></div>
+        <div class="leg"><div class="legpip" style="background:var(--gr)"></div><span>Amortização Acum.</span></div>
+        <div class="leg"><div class="legpip" style="background:var(--rd)"></div><span>Juros Acum.</span></div>
+      </div>
+    </div>
+    <svg id="chart" viewBox="0 0 900 120" preserveAspectRatio="none"></svg>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs ani d3">
+    <button class="tabbt on" id="tv-ano"      onclick="setView('ano')">📅 Resumo Anual</button>
+    <button class="tabbt"    id="tv-completo" onclick="setView('completo')">📋 Tabela Completa</button>
+    <button class="tabbt"    id="tv-datas"    onclick="setView('datas')">🗓 Por Vencimento</button>
+    <span class="tabinfo" id="tab-info"></span>
+  </div>
+
+  <!-- TABELA -->
+  <div class="tcard ani d4">
+    <div class="tscroll">
+      <table>
+        <thead id="th"></thead>
+        <tbody id="tb"></tbody>
+        <tfoot id="tf"></tfoot>
+      </table>
+    </div>
+  </div>
+
+</main>
+</div>
+</div>
+
+<script>
+/* ═══ HELPERS */
+const G = id => document.getElementById(id);
+const fmt = v => new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v||0);
+const pc  = (v,d=2) => (v||0).toFixed(d)+'%';
+const p3  = n => String(n).padStart(3,'0');
+
+function fmtD(base,off,short=false){
+  const d=new Date(base); d.setMonth(d.getMonth()+off);
+  return short
+    ? d.toLocaleDateString('pt-BR',{month:'short',year:'numeric'})
+    : d.toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+}
+function getYr(base,off){ const d=new Date(base); d.setMonth(d.getMonth()+off); return d.getFullYear(); }
+function isCurM(base,off){
+  const d=new Date(base); d.setMonth(d.getMonth()+off);
+  const n=new Date(); return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear();
+}
+function getBase(){ const v=G('dataInicio').value; return v?new Date(v+'-01'):new Date(); }
+
+/* ═══ STATE */
+const S={tipo:'imovel',sistema:'PRICE',taxaMode:'m',view:'ano',tab:[]};
+
+/* ═══ ENGINES */
+function engPRICE(pv,i,n){
+  if(i===0){const p=pv/n;let s=pv;return Array.from({length:n},(_,k)=>{s-=p;return{p:k+1,pr:p,am:p,ju:0,sd:Math.max(s,0)};});}
+  const pmt=pv*i*Math.pow(1+i,n)/(Math.pow(1+i,n)-1);let s=pv;
+  return Array.from({length:n},(_,k)=>{const j=s*i,a=pmt-j;s-=a;return{p:k+1,pr:pmt,am:a,ju:j,sd:Math.max(s,0)};});
+}
+function engSAC(pv,i,n){
+  const a=pv/n;let s=pv;
+  return Array.from({length:n},(_,k)=>{const j=s*i,pr=a+j;s-=a;return{p:k+1,pr,am:a,ju:j,sd:Math.max(s,0)};});
+}
+function engCons(val,n,ta){
+  const a=val/n,adm=val*(ta/100)/n;let s=val;
+  return Array.from({length:n},(_,k)=>{s-=a;return{p:k+1,pr:a+adm,am:a,ju:adm,sd:Math.max(s,0)};});
+}
+
+/* ═══ CONTROLS */
+function setTipo(el){
+  document.querySelectorAll('.tbtn').forEach(b=>b.classList.remove('on'));
+  el.classList.add('on'); S.tipo=el.dataset.tipo;
+  const c=S.tipo==='consorcio';
+  G('entrada-field').style.display   =c?'none':'';
+  G('bloco-juros').style.display     =c?'none':'';
+  G('bloco-consorcio').style.display =c?'':'none';
+  G('bloco-sistema').style.display   =c?'none':'';
+  calc();
+}
+function setSistema(s){
+  S.sistema=s;
+  ['PRICE','SAC'].forEach(x=>G('r-'+x).classList.toggle('on',x===s));
+  calc();
+}
+function setTaxaMode(m){
+  S.taxaMode=m;
+  G('tog-m').classList.toggle('on',m==='m');
+  G('tog-a').classList.toggle('on',m==='a');
+  G('bloco-taxa-m').style.display=m==='m'?'':'none';
+  G('bloco-taxa-a').style.display=m==='a'?'':'none';
+  calc();
+}
+function setView(v){
+  S.view=v;
+  ['ano','completo','datas'].forEach(x=>G('tv-'+x).classList.toggle('on',x===v));
+  renderTable();
+}
+function onMChange(){
+  const m=parseFloat(G('taxaM').value)||0;
+  const a=(Math.pow(1+m/100,12)-1)*100;
+  G('taxaA').value=a.toFixed(4);
+  G('hint-am').textContent='≈ '+a.toFixed(2)+' % a.a.';
+  calc();
+}
+function onAChange(){
+  const a=parseFloat(G('taxaA').value)||0;
+  const m=(Math.pow(1+a/100,1/12)-1)*100;
+  G('taxaM').value=m.toFixed(4);
+  G('hint-ma').textContent='≈ '+m.toFixed(4)+' % a.m.';
+  calc();
+}
+
+/* ═══ CALC */
+function calc(){
+  const val=parseFloat(G('valor').value)||0;
+  const ent=parseFloat(G('entrada').value)||0;
+  const n  =parseInt(G('parcelas').value)||1;
+  const c  =S.tipo==='consorcio';
+  const pv =Math.max(val-ent,0);
+
+  G('hint-pv').textContent='Saldo a financiar: '+fmt(pv)+(val>0?' ('+((ent/val)*100).toFixed(1)+'% de entrada)':'');
+  G('hint-anos').textContent=(n/12).toFixed(1)+' anos';
+  const ta=parseFloat(G('taxaAdm').value)||0;
+  G('hint-adm').textContent='Diluída em '+n+' parcelas = '+(ta/n).toFixed(4)+'%/mês';
+
+  let iM=0;
+  if(!c) iM=S.taxaMode==='m'?(parseFloat(G('taxaM').value)||0)/100:(Math.pow(1+(parseFloat(G('taxaA').value)||0)/100,1/12)-1);
+
+  const tab=c?engCons(val,n,ta):S.sistema==='PRICE'?engPRICE(pv,iM,n):engSAC(pv,iM,n);
+  S.tab=tab;
+
+  const tP=tab.reduce((s,r)=>s+r.pr,0);
+  const tA=tab.reduce((s,r)=>s+r.am,0);
+  const tJ=tab.reduce((s,r)=>s+r.ju,0);
+  const p1=tab[0]?.pr||0, pN=tab.at(-1)?.pr||0;
+  const pA=tP>0?(tA/tP)*100:0, pJ=tP>0?(tJ/tP)*100:0;
+
+  /* KPIs */
+  G('kpi-p1').textContent=fmt(p1);
+  G('kpi-p1s').textContent=c?'Valor mensal fixo':S.sistema==='SAC'?'Maior parcela':'Parcela fixa';
+  G('kpi-pn').textContent=fmt(pN);
+  G('kpi-pns').textContent=S.sistema==='SAC'&&!c?'Última e menor parcela':'Igual à 1ª (fixas)';
+  G('kpi-am').textContent=fmt(tA);
+  G('kpi-ams').textContent=pc(pA,1)+' do total pago';
+  G('kpi-ju').textContent=fmt(tJ);
+  G('kpi-jus').textContent=pc(pJ,1)+' do total pago';
+  G('kpi-p1b').style.width='100%';
+  G('kpi-pnb').style.width=(pN/p1*100)+'%';
+  G('kpi-amb').style.width=pA+'%';
+  G('kpi-jub').style.width=pJ+'%';
+
+  /* Barra */
+  G('seg-am').style.width=pA+'%'; G('seg-ju').style.width=pJ+'%';
+  G('leg-am').textContent=pc(pA,1)+' Principal';
+  G('leg-ju').textContent=pc(pJ,1)+(c?' Taxa Adm':' Juros');
+
+  /* Meta */
+  const base=getBase();
+  const fim=new Date(base); fim.setMonth(fim.getMonth()+n-1);
+  G('m-total').textContent=fmt(tP);
+  G('m-prazo').textContent=n+'x / '+(n/12).toFixed(0)+'a';
+  G('m-tm').textContent=c?pc(ta/n,4):pc(iM*100,4);
+  G('m-ta').textContent=c?pc(ta,2):pc((Math.pow(1+iM,12)-1)*100,2);
+  G('m-fim').textContent=fim.toLocaleDateString('pt-BR',{month:'short',year:'numeric'});
+
+  drawChart(tab);
+  renderTable();
+}
+
+/* ═══ CHART */
+function drawChart(tab){
+  const svg=G('chart'); const W=900,H=120,pT=6,pB=18;
+  const bB=H-pB,bH=H-pT-pB;
+  const maxS=tab[0]?.sd||1;
+  let cumA=0,cumJ=0;
+  const totA=tab.reduce((s,r)=>s+r.am,0)||1;
+  const totJ=tab.reduce((s,r)=>s+r.ju,0)||1;
+  const xf=i=>i/(tab.length-1||1)*W;
+  const yf=(v,mx)=>pT+(1-v/mx)*bH;
+
+  const sP=[],aP=[],jP=[];
+  tab.forEach((r,i)=>{
+    cumA+=r.am; cumJ+=r.ju;
+    sP.push({x:xf(i),y:yf(r.sd,maxS)});
+    aP.push({x:xf(i),y:yf(cumA,totA)});
+    jP.push({x:xf(i),y:yf(cumJ,totJ)});
+  });
+
+  const path=pts=>pts.map((p,i)=>(i?'L':'M')+p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
+  const area=pts=>path(pts)+` L${pts.at(-1).x},${bB} L0,${bB} Z`;
+  const gy=[.25,.5,.75];
+
+  svg.innerHTML=`<defs>
+    <linearGradient id="gS" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#14b8ff" stop-opacity=".3"/><stop offset="100%" stop-color="#14b8ff" stop-opacity=".02"/></linearGradient>
+    <linearGradient id="gA" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#10d98a" stop-opacity=".22"/><stop offset="100%" stop-color="#10d98a" stop-opacity=".02"/></linearGradient>
+  </defs>
+  ${gy.map(f=>`<line x1="0" y1="${(pT+f*bH).toFixed(0)}" x2="${W}" y2="${(pT+f*bH).toFixed(0)}" stroke="#1c2a3a" stroke-width="1" stroke-dasharray="4 4"/>`).join('')}
+  <path d="${area(aP)}" fill="url(#gA)"/>
+  <path d="${area(sP)}" fill="url(#gS)"/>
+  <path d="${path(jP)}" fill="none" stroke="#ff4f6a" stroke-width="1.2" opacity=".75"/>
+  <path d="${path(aP)}" fill="none" stroke="#10d98a" stroke-width="1.5" opacity=".85"/>
+  <path d="${path(sP)}" fill="none" stroke="#14b8ff" stroke-width="2"/>
+  <text x="4" y="${H-3}" fill="#3a5570" font-size="8" font-family="JetBrains Mono">Início</text>
+  <text x="${W-4}" y="${H-3}" fill="#3a5570" font-size="8" font-family="JetBrains Mono" text-anchor="end">Término</text>`;
+}
+
+/* ═══ TABLE */
+function renderTable(){
+  const tab=S.tab; if(!tab.length) return;
+  const c=S.tipo==='consorcio';
+  const jl=c?'Taxa Adm':'Juros';
+  const base=getBase();
+  const tP=tab.reduce((s,r)=>s+r.pr,0);
+  const tA=tab.reduce((s,r)=>s+r.am,0);
+  const tJ=tab.reduce((s,r)=>s+r.ju,0);
+  const maxSD=tab[0]?.sd||1;
+  const anoAt=new Date().getFullYear();
+
+  /* ─ RESUMO ANUAL */
+  if(S.view==='ano'){
+    G('tab-info').textContent=tab.length+' parcelas · '+(c?'Consórcio':S.sistema);
+    const map={};
+    tab.forEach(r=>{
+      const yr=getYr(base,r.p-1);
+      if(!map[yr])map[yr]={yr,ps:[],tpr:0,tam:0,tju:0,sd:0};
+      map[yr].ps.push(r.p);map[yr].tpr+=r.pr;map[yr].tam+=r.am;map[yr].tju+=r.ju;map[yr].sd=r.sd;
+    });
+    const rows=Object.values(map);
+    const baseSD=(rows[0]?.sd||0)+(rows[0]?.tam||0)||1;
+
+    G('th').innerHTML=`<tr>
+      <th>Ano</th>
+      <th style="text-align:left">Período</th>
+      <th>Parcelas</th>
+      <th>Total Prestações</th>
+      <th>Total Amortização</th>
+      <th>Total ${jl}</th>
+      <th>Saldo Final do Ano</th>
+      <th>% Quitado</th>
+    </tr>`;
+
+    let h='';
+    rows.forEach((r,i)=>{
+      const qp=((baseSD-r.sd)/baseSD)*100;
+      const atual=r.yr===anoAt;
+      h+=`<tr class="${atual?'hl':i%2===1?'stripe':''}">
+        <td class="cn">${r.yr}${atual?'<span class="bdg bam">ATUAL</span>':''}</td>
+        <td style="text-align:left;color:var(--tx2);font-size:11px">${fmtD(base,r.ps[0]-1,true)} – ${fmtD(base,r.ps.at(-1)-1,true)}</td>
+        <td class="cn">${r.ps[0]}–${r.ps.at(-1)} <span style="color:var(--tx3)">(${r.ps.length}x)</span></td>
+        <td class="cv">${fmt(r.tpr)}</td>
+        <td class="cam">${fmt(r.tam)}</td>
+        <td class="cju">${fmt(r.tju)}</td>
+        <td class="${r.sd<1?'csd z':'csd'}">${fmt(r.sd)}</td>
+        <td>
+          <div class="ibar">
+            <div class="itrack"><div class="ifill" style="width:${qp.toFixed(1)}%;background:var(--gr)"></div></div>
+            <span class="ipct">${qp.toFixed(1)}%</span>
+          </div>
+        </td>
+      </tr>`;
+    });
+    G('tb').innerHTML=h;
+    G('tf').innerHTML=`<tr>
+      <td colspan="3" style="color:var(--tx3)">TOTAL GERAL</td>
+      <td style="color:var(--ac)">${fmt(tP)}</td>
+      <td style="color:var(--gr)">${fmt(tA)}</td>
+      <td style="color:var(--rd)">${fmt(tJ)}</td>
+      <td colspan="2"></td>
+    </tr>`;
+    return;
+  }
+
+  /* ─ TABELA COMPLETA */
+  if(S.view==='completo'){
+    G('tab-info').textContent=tab.length+' parcelas · '+(c?'Consórcio':S.sistema);
+    G('th').innerHTML=`<tr>
+      <th>#</th>
+      <th>Prestação</th>
+      <th>Amortização</th>
+      <th>${jl}</th>
+      <th>% Amort.</th>
+      <th>% ${jl}</th>
+      <th>Saldo Devedor</th>
+      <th>Progresso</th>
+    </tr>`;
+    let h='';
+    tab.forEach((r,i)=>{
+      const pA=(r.am/r.pr)*100,pJ=(r.ju/r.pr)*100;
+      const prog=((maxSD-r.sd)/maxSD)*100;
+      h+=`<tr class="${r.sd<1?'past':i%2===1?'stripe':''}">
+        <td class="cn">#${p3(r.p)}</td>
+        <td class="cv">${fmt(r.pr)}</td>
+        <td class="cam">${fmt(r.am)}</td>
+        <td class="cju">${fmt(r.ju)}</td>
+        <td class="cam" style="font-size:11px">${pA.toFixed(1)}%</td>
+        <td class="cju" style="font-size:11px">${pJ.toFixed(1)}%</td>
+        <td class="${r.sd<1?'csd z':'csd'}">${fmt(r.sd)}</td>
+        <td>
+          <div class="ibar">
+            <div class="itrack"><div class="ifill" style="width:${prog.toFixed(1)}%;background:var(--ac)"></div></div>
+            <span class="ipct">${prog.toFixed(0)}%</span>
+          </div>
+        </td>
+      </tr>`;
+    });
+    G('tb').innerHTML=h;
+    G('tf').innerHTML=`<tr>
+      <td style="color:var(--tx3)">TOTAL</td>
+      <td style="color:var(--ac)">${fmt(tP)}</td>
+      <td style="color:var(--gr)">${fmt(tA)}</td>
+      <td style="color:var(--rd)">${fmt(tJ)}</td>
+      <td colspan="4"></td>
+    </tr>`;
+    return;
+  }
+
+  /* ─ POR VENCIMENTO */
+  if(S.view==='datas'){
+    G('tab-info').textContent=tab.length+' vencimentos · '+(c?'Consórcio':S.sistema);
+    G('th').innerHTML=`<tr>
+      <th style="text-align:left">Data de Vencimento</th>
+      <th>#</th>
+      <th>Prestação</th>
+      <th>Amortização</th>
+      <th>${jl}</th>
+      <th>Saldo Devedor</th>
+      <th>Status</th>
+    </tr>`;
+    const today=new Date(); today.setHours(0,0,0,0);
+    let h='';
+    tab.forEach((r,i)=>{
+      const d=new Date(base); d.setMonth(d.getMonth()+r.p-1);
+      const past=d<today&&!isCurM(base,r.p-1);
+      const cur=isCurM(base,r.p-1);
+      let status=past?'<span class="bdg bgr">PAGO</span>':cur?'<span class="bdg bam">ATUAL</span>':'<span style="color:var(--tx3);font-size:10px">Pendente</span>';
+      h+=`<tr class="${cur?'hl':past?'past':i%2===1?'stripe':''}">
+        <td>
+          <div style="display:flex;align-items:center;gap:7px;">
+            <div style="width:5px;height:5px;border-radius:50%;flex-shrink:0;background:${cur?'var(--am)':past?'var(--gr)':'var(--bd2)'}"></div>
+            <span class="cdt" style="${cur?'color:var(--am)':''}">${d.toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'})}</span>
+          </div>
+        </td>
+        <td class="cn">#${p3(r.p)}</td>
+        <td class="cv">${fmt(r.pr)}</td>
+        <td class="cam">${fmt(r.am)}</td>
+        <td class="cju">${fmt(r.ju)}</td>
+        <td class="${r.sd<1?'csd z':'csd'}">${fmt(r.sd)}</td>
+        <td>${status}</td>
+      </tr>`;
+    });
+    G('tb').innerHTML=h;
+    G('tf').innerHTML='';
+  }
+}
+
+/* ═══ INIT */
+(function(){
+  G('hdate').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  const d=new Date(); d.setMonth(d.getMonth()+1);
+  G('dataInicio').value=d.toISOString().slice(0,7);
+  onMChange();
+  calc();
+})();
+</script>
+</body>
+</html>

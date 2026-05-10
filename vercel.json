@@ -1,0 +1,15 @@
+{
+  "buildCommand": "echo 'Static site - no build needed'",
+  "framework": "static",
+  "public": ".",
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/index.html"
+    }
+  ],
+  "env": [
+    "SUPABASE_URL",
+    "SUPABASE_ANON_KEY"
+  ]
+}
