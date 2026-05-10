@@ -309,7 +309,20 @@ tfoot tr td{padding:11px 14px;font-weight:600;font-size:12px;background:var(--s2
 
     <div class="field">
       <div class="flabel">Início dos Pagamentos</div>
-      <input type="month" id="dataInicio" oninput="calc()">
+      <input type="date" id="dataInicio" oninput="calc()">
+    </div>
+
+    <div class="field">
+      <div class="flabel">Status</div>
+      <div class="tog" style="margin:10px 0 12px;">
+        <button class="togbtn on" id="status-aberto" onclick="setStatus('aberto')">Aberto</button>
+        <button class="togbtn"    id="status-pago"   onclick="setStatus('pago')">Pago</button>
+      </div>
+    </div>
+
+    <div class="field" id="data-pagamento-field" style="display:none;">
+      <div class="flabel">Data de Pagamento</div>
+      <input type="date" id="dataPagamento">
     </div>
   </div>
 
@@ -465,7 +478,8 @@ const pc  = (v,d=2) => (v||0).toFixed(d)+'%';
 const p3  = n => String(n).padStart(3,'0');
 
 function fmtD(base,off,short=false){
-  const d=new Date(base); d.setMonth(d.getMonth()+off);
+  const d=new Date(base);
+  d.setMonth(d.getMonth()+off);
   return short
     ? d.toLocaleDateString('pt-BR',{month:'short',year:'numeric'})
     : d.toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
@@ -475,10 +489,13 @@ function isCurM(base,off){
   const d=new Date(base); d.setMonth(d.getMonth()+off);
   const n=new Date(); return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear();
 }
-function getBase(){ const v=G('dataInicio').value; return v?new Date(v+'-01'):new Date(); }
+function getBase(){
+  const v=G('dataInicio').value;
+  return v?new Date(v+'T00:00:00'):new Date();
+}
 
 /* ═══ STATE */
-const S={tipo:'imovel',sistema:'PRICE',taxaMode:'m',view:'ano',tab:[]};
+const S={tipo:'imovel',sistema:'PRICE',taxaMode:'m',view:'ano',tab:[],status:'aberto',dataPagamento:null};
 
 /* ═══ ENGINES */
 function engPRICE(pv,i,n){
@@ -522,6 +539,13 @@ function setTaxaMode(m){
 function setView(v){
   S.view=v;
   ['ano','completo','datas'].forEach(x=>G('tv-'+x).classList.toggle('on',x===v));
+  renderTable();
+}
+function setStatus(s){
+  S.status=s;
+  G('status-aberto').classList.toggle('on',s==='aberto');
+  G('status-pago').classList.toggle('on',s==='pago');
+  G('data-pagamento-field').style.display=s==='pago'?'':'none';
   renderTable();
 }
 function onMChange(){
@@ -745,7 +769,8 @@ function renderTable(){
 
   /* ─ POR VENCIMENTO */
   if(S.view==='datas'){
-    G('tab-info').textContent=tab.length+' vencimentos · '+(c?'Consórcio':S.sistema);
+    G('tab-info').textContent=tab.length+' vencimentos · '+(c?'Consórcio':S.sistema)+' · Status: '+S.status;
+    const dataPgto=G('dataPagamento').value;
     G('th').innerHTML=`<tr>
       <th style="text-align:left">Data de Vencimento</th>
       <th>#</th>
@@ -754,6 +779,7 @@ function renderTable(){
       <th>${jl}</th>
       <th>Saldo Devedor</th>
       <th>Status</th>
+      ${S.status==='pago'?'<th>Data de Pagamento</th>':''}
     </tr>`;
     const today=new Date(); today.setHours(0,0,0,0);
     let h='';
@@ -761,7 +787,16 @@ function renderTable(){
       const d=new Date(base); d.setMonth(d.getMonth()+r.p-1);
       const past=d<today&&!isCurM(base,r.p-1);
       const cur=isCurM(base,r.p-1);
-      let status=past?'<span class="bdg bgr">PAGO</span>':cur?'<span class="bdg bam">ATUAL</span>':'<span style="color:var(--tx3);font-size:10px">Pendente</span>';
+      let statusBadge='';
+      let dataPgtoCell='';
+
+      if(S.status==='pago'){
+        statusBadge='<span class="bdg bgr">PAGO</span>';
+        dataPgtoCell=`<td>${dataPgto?new Date(dataPgto).toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'}):'—'}</td>`;
+      } else {
+        statusBadge=past?'<span class="bdg bgr">VENCIDO</span>':cur?'<span class="bdg bam">ATUAL</span>':'<span style="color:var(--tx3);font-size:10px">Aberto</span>';
+      }
+
       h+=`<tr class="${cur?'hl':past?'past':i%2===1?'stripe':''}">
         <td>
           <div style="display:flex;align-items:center;gap:7px;">
@@ -774,7 +809,8 @@ function renderTable(){
         <td class="cam">${fmt(r.am)}</td>
         <td class="cju">${fmt(r.ju)}</td>
         <td class="${r.sd<1?'csd z':'csd'}">${fmt(r.sd)}</td>
-        <td>${status}</td>
+        <td>${statusBadge}</td>
+        ${dataPgtoCell}
       </tr>`;
     });
     G('tb').innerHTML=h;
@@ -786,7 +822,7 @@ function renderTable(){
 (function(){
   G('hdate').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
   const d=new Date(); d.setMonth(d.getMonth()+1);
-  G('dataInicio').value=d.toISOString().slice(0,7);
+  G('dataInicio').value=d.toISOString().split('T')[0];
   onMChange();
   calc();
 })();
